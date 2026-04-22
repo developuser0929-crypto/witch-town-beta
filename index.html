@@ -162,10 +162,91 @@ input::placeholder{color:var(--text3)}input:focus{border-color:var(--gold)}
 <div class="confirm-dialog" id="confirm-dialog"><div class="confirm-box"><div class="title" id="confirm-title"></div><div class="desc" id="confirm-desc"></div><div class="btns" id="confirm-btns"></div></div></div>
 <div class="action-menu" id="action-menu" onclick="closeActionMenu()"><div class="action-sheet" id="action-sheet" onclick="event.stopPropagation()"></div></div>
 <div class="modal-overlay" id="rules-modal"><div class="modal"><div class="modal-header"><h2>游戏规则</h2><button class="modal-close" onclick="toggleRules()">&times;</button></div>
-<div class="modal-body"><h3>简介</h3><p><span class="hl">村民胜</span>：翻出所有女巫牌。<span class="hl">女巫胜</span>：所有存活者都是女巫。</p>
-<h3>身份</h3><ul><li><span class="hl">女巫</span>-夜晚杀人(可杀任何人)。持有过女巫牌=永远女巫。</li><li><span class="hl">警长</span>-夜晚保护一人(不能自保)。翻出后永久失效。</li><li><span class="hl">村民</span>-通过指控找女巫。可同时是女巫+警长。</li></ul>
-<h3>流程</h3><p><span class="hl">黎明</span>(一次):女巫互认+放黑猫。<span class="hl">白天</span>:抽出牌。<span class="hl">夜晚</span>:闭眼→女巫杀人→警长保护→睁眼→自首→结算。</p>
-<h3>传染</h3><ul><li>黑猫持有者翻一张。每人从上家拿一张。</li><li>拿到女巫牌=永久女巫。拿到警长牌=新警长。女巫牌被拿走仍是女巫。</li></ul></div></div></div>
+<div class="modal-body">
+<h3>游戏背景</h3>
+<p>1692年，美国塞勒姆镇笼罩在巫术恐惧中。玩家分为<span class="hl">女巫阵营</span>和<span class="hl">村民阵营</span>，在猜疑与背叛中展开博弈。适合4-12人，游戏时长约20-40分钟。</p>
+
+<h3>胜利条件</h3>
+<ul>
+<li><span class="hl">村民获胜</span>：通过指控翻开所有"女巫"身份牌。</li>
+<li><span class="hl">女巫获胜</span>：所有存活的玩家都是女巫阵营。</li>
+</ul>
+
+<h3>身份说明</h3>
+<ul>
+<li><span class="hl">女巫</span> - 夜晚与同伴商议，选择一名玩家杀害（可选任何人，包括同伴或自己）。一旦持有过女巫牌，永远是女巫阵营，即使牌被传走也不改变。</li>
+<li><span class="hl">警长</span> - 夜晚选择一名玩家进行保护（不能保护自己）。如果警长身份牌被翻出，警长能力从游戏中永久移除。</li>
+<li><span class="hl">普通村民</span> - 没有特殊能力，通过观察和指控来找出女巫。</li>
+<li>一个人可以同时是女巫和警长（坏警长），可以利用保护能力为女巫阵营服务。</li>
+</ul>
+
+<h3>身份牌</h3>
+<p>每人根据人数获得3~5张身份牌，面朝下放在自己面前。牌上写着"女巫""警长"或"不是女巫"。</p>
+<ul>
+<li>当一名玩家被累计指控7张红卡时，放下第7张的玩家选择翻开其一张身份牌。</li>
+<li><span class="hl">翻出女巫牌 = 该玩家立即死亡</span>，需公开所有剩余身份牌。</li>
+<li>所有身份牌被翻完 = 该玩家死亡。</li>
+</ul>
+
+<h3>卡牌类型</h3>
+<ul>
+<li><span class="hl" style="color:var(--red2)">红卡（指控）</span> - 放在目标玩家面前。累计7张触发审判，翻开一张身份牌。</li>
+<li><span class="hl" style="color:#4a8ac0">蓝卡（装备）</span> - 持续效果卡，放在玩家面前。包括：黑猫、情侣（两张，一人死另一人也死）、信徒（不能被红卡指控）。</li>
+<li><span class="hl" style="color:#4a4">绿卡（一次性）</span> - 使用后弃掉。包括：嫁祸（转移卡牌）等。</li>
+<li><span class="hl">黑卡（立即生效）</span> - 抽到立刻执行。"夜晚"触发夜晚阶段，"传染"触发身份牌传递。</li>
+</ul>
+<p>所有卡牌效果不可用在自己身上。</p>
+
+<h3>游戏流程</h3>
+<p><span class="hl">黎明（仅一次）</span></p>
+<ul>
+<li>所有人闭眼。</li>
+<li>女巫睁眼，互相确认同伴身份。</li>
+<li>女巫选择一名玩家放置黑猫牌（可以放自己来洗白嫌疑）。</li>
+<li>女巫闭眼，所有人睁眼，公布黑猫位置。</li>
+</ul>
+
+<p><span class="hl">白天</span></p>
+<ul>
+<li>从持有黑猫的玩家开始，顺时针轮流行动。</li>
+<li>每回合：抽两张牌，可出任意张红/蓝/绿卡（对象必须是其他玩家）。</li>
+<li>当牌堆抽完时，进入夜晚。</li>
+</ul>
+
+<p><span class="hl">夜晚（抽到"夜晚"黑卡时触发）</span></p>
+<ul>
+<li>1. 所有人闭眼</li>
+<li>2. 女巫睁眼，共同选择一名玩家杀害</li>
+<li>3. 女巫闭眼</li>
+<li>4. 警长睁眼，选择一名玩家保护（不能选自己）</li>
+<li>5. 警长闭眼</li>
+<li>6. 所有人睁眼</li>
+<li>7. 自首环节：任何人可选择自首（免死但需翻一张身份牌，限时15秒）</li>
+<li>8. 公布结果：被杀且未被保护且未自首 = 死亡</li>
+</ul>
+<p>夜晚结束后，弃牌堆洗混重新组成牌堆，"夜晚"牌放在底部。</p>
+
+<h3>传染规则（抽到"传染"黑卡时触发）</h3>
+<ul>
+<li>持有黑猫的玩家必须翻开自己的一张身份牌。</li>
+<li>每位玩家从左边（上家）玩家处拿取一张未翻开的身份牌。</li>
+<li>拿到女巫牌 = 永久变成女巫阵营（即使之后牌被拿走）。</li>
+<li>拿到警长牌 = 成为新警长，原持有者失去警长身份。</li>
+<li>失去女巫牌的玩家仍然是女巫（一日为巫，终身为巫）。</li>
+</ul>
+<p>传染会让阵营不断变化，尽早找出女巫至关重要！</p>
+
+<h3>特殊规则</h3>
+<ul>
+<li>只剩两名玩家时，所有蓝卡从游戏中移除。</li>
+<li>死亡的玩家必须公开所有身份牌，并宣告是否是女巫。</li>
+<li>可以同时是女巫和警长，这种"坏警长"可以故意保护错误目标来帮助女巫。</li>
+</ul>
+
+<h3>关于本工具</h3>
+<p>本工具仅替代主持人角色，管理闭眼阶段（黎明/夜晚）的操作流程和传染阶段的身份追踪。实体卡牌的抽牌、出牌、指控等操作仍在线下进行。</p>
+<p>房主设备建议打开旁白语音（左上角喇叭按钮），放在桌子中间作为"主持人"。</p>
+</div></div></div>
 <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <script>
 const CHARS='ABCDEFGHJKLMNPQRSTUVWXYZ23456789',CONFESS_TIME=15,RP='salem1692x';
