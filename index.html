@@ -191,7 +191,7 @@ input::placeholder{color:var(--text3)}input:focus{border-color:var(--gold)}
 <h3>卡牌类型</h3>
 <ul>
 <li><span class="hl" style="color:var(--red2)">红卡（指控）</span> - 放在目标玩家面前。累计7张触发审判，翻开一张身份牌。</li>
-<li><span class="hl" style="color:#4a8ac0">蓝卡（装备）</span> - 持续效果卡，放在玩家面前。包括：黑猫、情侣（两张，一人死另一人也死）、信徒（不能被红卡指控）。</li>
+<li><span class="hl" style="color:#4a8ac0">蓝卡（装备）</span> - 持续效果卡，放在玩家面前。包括：黑猫（传染时持有者需翻牌，可被嫁祸等卡牌转移）、情侣（两张，一人死另一人也死）、信徒（不能被红卡指控）。</li>
 <li><span class="hl" style="color:#4a4">绿卡（一次性）</span> - 使用后弃掉。包括：嫁祸（转移卡牌）等。</li>
 <li><span class="hl">黑卡（立即生效）</span> - 抽到立刻执行。"夜晚"触发夜晚阶段，"传染"触发身份牌传递。</li>
 </ul>
@@ -502,7 +502,8 @@ const managePlayer=(name,action)=>{if(!S.isHost)return;
     if(action==='witch_die'){p.alive=false;addHistory(id,p.role,p.role,'女巫牌翻出')}
     else if(action==='constable_reveal'){H.constableRevealed=true;const o=p.role;if(isC(p.role)){p.role=isW(p.role)?'witch':'villager';addHistory(id,o,p.role,'警长牌翻出')}showToast('警长永久失效')}
     else if(action==='all_die'){p.alive=false;addHistory(id,p.role,p.role,'全翻完')}
-    else if(action==='mark_dead'){p.alive=false}});
+    else if(action==='mark_dead'){p.alive=false}
+    else if(action==='give_cat'){S.blackCatHolder=name;showToast('黑猫转移给 '+name)}});
   bcastDay();setTimeout(checkWin,300);saveSession()};
 const bcastDay=()=>{const ps=getOrdered().map(p=>({name:p.name,alive:p.alive}));broadcast({type:'back_to_day',players:ps,round:S.round,seatOrder:H.playerOrder.map(id=>H.players.get(id)?.name).filter(Boolean)})};
 
@@ -590,7 +591,7 @@ const showGameOver=msg=>{showView('gameover');$('id-btn').style.display='none';
     h+='<div class="go-section">-- 村民阵营 --</div>';
     vl.forEach(p=>{h+='<div class="go-player'+(p.alive?'':' go-dead')+'"><b>'+esc(p.name)+'</b> ('+rn(p.role)+')'+(p.alive?'':'☠️')+'<br><span style="font-size:12px;color:var(--text3)">'+fmtH(p.history)+'</span></div>'});
     $('go-players').innerHTML=h}if(S.isHost)$('host-controls').style.display='none'};
-const showManageMenu=name=>{$('action-sheet').innerHTML='<div class="action-item" style="font-weight:bold;color:var(--text3)">'+esc(name)+'</div><div class="action-item danger" onclick="closeActionMenu();managePlayer(\''+esc(name)+'\',\'witch_die\')">翻出女巫牌(死亡)</div><div class="action-item" onclick="closeActionMenu();managePlayer(\''+esc(name)+'\',\'constable_reveal\')">翻出警长牌(永久失效)</div><div class="action-item danger" onclick="closeActionMenu();managePlayer(\''+esc(name)+'\',\'all_die\')">全翻完(死亡)</div><div class="action-item" onclick="closeActionMenu();managePlayer(\''+esc(name)+'\',\'mark_dead\')">标记死亡</div><div class="action-item cancel" onclick="closeActionMenu()">取消</div>';$('action-menu').classList.add('active')};
+const showManageMenu=name=>{$('action-sheet').innerHTML='<div class="action-item" style="font-weight:bold;color:var(--text3)">'+esc(name)+'</div><div class="action-item danger" onclick="closeActionMenu();managePlayer(\''+esc(name)+'\',\'witch_die\')">翻出女巫牌(死亡)</div><div class="action-item" onclick="closeActionMenu();managePlayer(\''+esc(name)+'\',\'constable_reveal\')">翻出警长牌(永久失效)</div><div class="action-item danger" onclick="closeActionMenu();managePlayer(\''+esc(name)+'\',\'all_die\')">全翻完(死亡)</div><div class="action-item" onclick="closeActionMenu();managePlayer(\''+esc(name)+'\',\'mark_dead\')">标记死亡</div><div class="action-item" onclick="closeActionMenu();managePlayer(\''+esc(name)+'\',\'give_cat\')">转移黑猫到此人</div><div class="action-item cancel" onclick="closeActionMenu()">取消</div>';$('action-menu').classList.add('active')};
 
 // ---- CONSPIRACY UI ----
 let cD={};
