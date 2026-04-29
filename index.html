@@ -22,7 +22,8 @@ input::placeholder{color:var(--text3)}input:focus{border-color:var(--gold)}
 .btn-primary{background:var(--red);font-weight:bold}.btn-green{background:var(--green)}.btn-blue{background:var(--blue)}
 .btn-small{padding:10px 16px;font-size:14px;width:auto;display:inline-block;margin:4px}
 .btn-outline{background:transparent;border:1px solid var(--border)}.btn-danger{background:#5a1a1a;border:1px solid var(--red)}
-.room-code{font-family:monospace;font-size:36px;color:var(--gold);letter-spacing:6px;text-align:center;padding:16px;background:var(--bg2);border-radius:var(--radius);margin:12px 0;border:1px dashed var(--gold)}
+	.room-code{font-family:monospace;font-size:36px;color:var(--gold);letter-spacing:6px;text-align:center;padding:16px;background:var(--bg2);border-radius:var(--radius);margin:12px 0;border:1px dashed var(--gold)}
+	.version-tag{font-size:12px;color:var(--text3);margin-top:-12px;margin-bottom:12px;font-family:monospace}
 .player-list{width:100%;margin:12px 0}
 .player-item{display:flex;align-items:center;padding:12px 16px;background:var(--bg2);border-radius:8px;margin-bottom:6px;border-left:3px solid var(--border);gap:8px}
 .player-item.is-dead{opacity:.4;text-decoration:line-through}
@@ -100,7 +101,7 @@ input::placeholder{color:var(--text3)}input:focus{border-color:var(--gold)}
   <div class="id-popup" id="id-popup"></div>
 
   <div class="view active" id="view-home">
-    <h1>女巫镇</h1><div class="subtitle">Salem 1692 - 无主持人助手</div><div class="divider"></div>
+	    <h1>女巫镇</h1><div class="subtitle">Salem 1692 - 无主持人助手</div><div class="version-tag" id="app-version">v1.0.1</div><div class="divider"></div>
     <input id="input-name" placeholder="输入你的昵称" maxlength="8">
     <button class="btn btn-primary" onclick="createRoom()">创建房间</button>
     <div style="display:flex;gap:8px;width:100%">
@@ -175,7 +176,7 @@ input::placeholder{color:var(--text3)}input:focus{border-color:var(--gold)}
 <h3>身份说明</h3>
 <ul>
 <li><span class="hl">女巫</span> - 夜晚与同伴商议，选择一名玩家杀害（可选任何人，包括同伴或自己）。一旦持有过女巫牌，永远是女巫阵营，即使牌被传走也不改变。</li>
-<li><span class="hl">警长</span> - 夜晚选择一名玩家进行保护（不能保护自己）。如果警长身份牌被翻出，警长能力从游戏中永久移除。</li>
+<li><span class="hl">警长</span> - 夜晚选择一名玩家进行保护（不能保护自己）。保护对象会在自首前公布，被保护者本轮无需自首。如果警长身份牌被翻出，警长能力从游戏中永久移除。</li>
 <li><span class="hl">普通村民</span> - 没有特殊能力，通过观察和指控来找出女巫。</li>
 <li>一个人可以同时是女巫和警长（坏警长），可以利用保护能力为女巫阵营服务。</li>
 </ul>
@@ -220,8 +221,8 @@ input::placeholder{color:var(--text3)}input:focus{border-color:var(--gold)}
 <li>3. 女巫闭眼</li>
 <li>4. 警长睁眼，选择一名玩家保护（不能选自己）</li>
 <li>5. 警长闭眼</li>
-<li>6. 所有人睁眼</li>
-<li>7. 自首环节：任何人可选择自首（免死但需翻一张身份牌，限时15秒）</li>
+<li>6. 所有人睁眼，公布警长保护对象</li>
+<li>7. 自首环节：未被保护的玩家可选择自首（免死但需翻一张身份牌，限时15秒）</li>
 <li>8. 公布结果：被杀且未被保护且未自首 = 死亡</li>
 </ul>
 <p>夜晚结束后，弃牌堆洗混重新组成牌堆，"夜晚"牌放在底部。</p>
@@ -249,16 +250,18 @@ input::placeholder{color:var(--text3)}input:focus{border-color:var(--gold)}
 </div></div></div>
 <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <script>
-const CHARS='ABCDEFGHJKLMNPQRSTUVWXYZ23456789',CONFESS_TIME=15,RP='salem1692x',REJOIN_GRACE=30000;
+const APP_VERSION='1.0.1',CHARS='ABCDEFGHJKLMNPQRSTUVWXYZ23456789',CONFESS_TIME=15,RP='salem1692x',REJOIN_GRACE=30000,HEARTBEAT_MS=10000,RECONNECT_MAX=120;
 let peer=null,clientConn=null;
-let S={myName:'',myRole:'villager',isHost:false,roomCode:'',gameState:'home',round:0,dawnDone:false,blackCatHolder:'',selectedTarget:'',confessTimer:null,confessed:false,alive:true,seatOrder:[],witchCount:0,reconnAttempts:0,tts:true};
+let S={myName:'',myRole:'villager',isHost:false,roomCode:'',gameState:'home',round:0,dawnDone:false,blackCatHolder:'',selectedTarget:'',protectedTarget:'',confessTimer:null,confessed:false,alive:true,seatOrder:[],witchCount:0,reconnAttempts:0,tts:true};
 let H={players:new Map(),connections:new Map(),playerOrder:[],gameStarted:false,constableRevealed:false,witchVotes:new Map(),constableSave:null,confessions:new Set(),confessResponses:new Set(),killTarget:null,dawnVotes:new Map(),conspiracyResponses:new Map(),roleHistory:new Map(),preConspiracyRoles:null,pendingReconnect:new Map(),savedPlayerOrder:[],phaseCtx:null,reconnectGrace:new Map()};
 let resolveWV=null,resolveCS=null,resolveDV=null;
+let reconnectTimer=null,heartbeatTimer=null,lastClientDataAt=0,hostRestoreTimer=null,hostRestoring=false,suppressHostClose=false,clientConnecting=false,connectSeq=0;
 
 const $=id=>document.getElementById(id),esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 const genCode=()=>Array.from({length:6},()=>CHARS[Math.floor(Math.random()*CHARS.length)]).join('');
 const showView=id=>{document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));const el=$('view-'+id);if(el){el.classList.add('active');el.classList.add('fade-in')}};
 const showToast=msg=>{const t=document.createElement('div');t.className='toast';t.textContent=msg;document.body.appendChild(t);setTimeout(()=>t.remove(),3000)};
+const setStatus=msg=>{const el=$('home-status');if(el)el.textContent=msg};
 const isW=r=>r==='witch'||r==='witch_constable';
 const isC=r=>r==='constable'||r==='witch_constable';
 const rn=r=>({villager:'普通村民',witch:'女巫',constable:'警长',witch_constable:'女巫+警长'})[r]||r;
@@ -286,7 +289,7 @@ const getSeatOrder=()=>getFullRoster().map(p=>p.name);
 const clearAllReconnectGrace=()=>{H.reconnectGrace.forEach(t=>clearTimeout(t));H.reconnectGrace.clear()};
 const clearReconnectGrace=name=>{const t=H.reconnectGrace.get(name);if(t){clearTimeout(t);H.reconnectGrace.delete(name)}};
 const startReconnectGrace=(name,fn)=>{clearReconnectGrace(name);H.reconnectGrace.set(name,setTimeout(()=>{H.reconnectGrace.delete(name);fn()},REJOIN_GRACE))};
-const resetHostRuntime=()=>{H.players.clear();H.connections.clear();H.playerOrder=[];H.witchVotes.clear();H.constableSave=null;H.confessions.clear();H.confessResponses.clear();H.killTarget=null;H.dawnVotes.clear();H.conspiracyResponses.clear();H.roleHistory.clear();H.preConspiracyRoles=null;H.pendingReconnect.clear();H.savedPlayerOrder=[];H.phaseCtx=null;clearAllReconnectGrace();resolveWV=null;resolveCS=null;resolveDV=null};
+const resetHostRuntime=()=>{H.players.clear();H.connections.clear();H.playerOrder=[];H.witchVotes.clear();H.constableSave=null;H.confessions.clear();H.confessResponses.clear();H.killTarget=null;H.dawnVotes.clear();H.conspiracyResponses.clear();H.roleHistory.clear();H.preConspiracyRoles=null;H.pendingReconnect.clear();H.savedPlayerOrder=[];H.phaseCtx=null;if(hostRestoreTimer){clearTimeout(hostRestoreTimer);hostRestoreTimer=null}hostRestoring=false;suppressHostClose=false;clearAllReconnectGrace();resolveWV=null;resolveCS=null;resolveDV=null};
 const bindConfirmTargets=(onPick,onCancel)=>{
   document.querySelectorAll('#confirm-btns .phase-pick').forEach(btn=>btn.onclick=()=>{closeConfirm();onPick(btn.dataset.target)});
   const cancel=$('phase-pick-cancel');if(cancel)cancel.onclick=()=>{closeConfirm();if(onCancel)onCancel()}
@@ -312,8 +315,8 @@ const getPhaseSyncMessages=data=>{
     {type:'witch_votes_update',votes:ph.requiredNames.map(name=>({name,target:H.witchVotes.get(name)||null})),targets:ph.players,wc:ph.requiredNames.length}
   ]:[{type:'night_wait',hint:'女巫正在行动...'}];
   if(ph.type==='night_constable')return data.alive&&data.name===ph.actorName?[{type:'night_constable_turn',players:ph.players}]:[{type:'night_wait',hint:'警长正在行动...'}];
-  if(ph.type==='night_open')return[{type:'night_open_eyes'}];
-  if(ph.type==='night_confess')return[{type:'night_confess_sync',remaining:Math.max(0,Math.ceil((ph.endsAt-Date.now())/1000)),responded:H.confessResponses.has(data.name),confessed:H.confessions.has(data.name)}];
+  if(ph.type==='night_open')return[{type:'night_open_eyes',protectedName:ph.protectedName||''}];
+  if(ph.type==='night_confess')return[{type:'night_confess_sync',remaining:Math.max(0,Math.ceil((ph.endsAt-Date.now())/1000)),responded:H.confessResponses.has(data.name),confessed:H.confessions.has(data.name),protectedName:ph.protectedName||''}];
   if(ph.type==='night_result'&&ph.payload)return[{type:'night_result',...ph.payload}];
   if(ph.type==='dawn_result')return[{type:'dawn_result',t:ph.target}];
   if(ph.type==='conspiracy'){const payload=getConspiracyPayload(data.name);if(!payload)return[];return H.conspiracyResponses.has(data.name)?[{type:'night_wait',hint:'等待其他玩家完成传染...'}]:[{type:'conspiracy_start',...payload}]}
@@ -355,10 +358,39 @@ const clearSession=()=>{sessionStorage.removeItem('ss');$('rejoin-section').styl
 
 // ============ PEER ============
 const broadcast=msg=>{const d=JSON.stringify(msg);H.connections.forEach(c=>{try{c.send(d)}catch(e){}});handleSM(msg)};
-const sendHost=msg=>{if(S.isHost){handleCM('host',msg);return}if(clientConn)try{clientConn.send(JSON.stringify(msg))}catch(e){}};
+const isClientOpen=()=>clientConn&&clientConn.open;
+const stopClientReconnect=()=>{if(reconnectTimer){clearTimeout(reconnectTimer);reconnectTimer=null}};
+const scheduleClientReconnect=(reason='')=>{
+  if(S.isHost||!S.myName||!S.roomCode)return;
+  if(clientConnecting)return;
+  if(reconnectTimer)return;
+  clientConn=null;
+  if(S.reconnAttempts>=RECONNECT_MAX){setStatus('暂时连不上房主，请确认房主页面已打开');showToast('重连暂停，请确认房主在线');return}
+  S.reconnAttempts++;
+  const delay=Math.min(10000,1500+S.reconnAttempts*500);
+  setStatus('正在重连房间 '+S.roomCode+'（第 '+S.reconnAttempts+' 次）');
+  if(S.reconnAttempts===1)showToast('断线，重连中...');
+  else if(S.reconnAttempts%8===0)showToast('仍在重连，确认房主手机已亮屏');
+  reconnectTimer=setTimeout(()=>{reconnectTimer=null;if(document.hidden)return;doConn(S.myName,S.roomCode,true)},delay)
+};
+const sendHost=msg=>{if(S.isHost){handleCM('host',msg);return}
+  if(isClientOpen())try{clientConn.send(JSON.stringify(msg));return}catch(e){}
+  scheduleClientReconnect('send')
+};
 const sendTo=(pid,msg)=>{if(pid==='host'){handleSM(msg);return}const c=H.connections.get(pid);if(c)try{c.send(JSON.stringify(msg))}catch(e){}};
 const sendWitches=msg=>{H.players.forEach((p,id)=>{if(p.alive&&isW(p.role))sendTo(id,msg)})};
 const setupHost=()=>{peer.on('connection',conn=>{conn.on('open',()=>{H.connections.set(conn.peer,conn);conn.on('data',raw=>handleCM(conn.peer,typeof raw==='string'?JSON.parse(raw):raw))});conn.on('close',()=>{const p=H.players.get(conn.peer);H.connections.delete(conn.peer);if(p){showToast(p.name+' 断线');handleDisconnect(p.name,conn.peer)}})})};
+const restoreHostPeer=()=>{
+  if(!S.isHost||!S.roomCode||hostRestoreTimer||hostRestoring)return;
+  if(peer&&!peer.destroyed&&!peer.disconnected)return;
+  hostRestoreTimer=setTimeout(()=>{hostRestoreTimer=null;
+    if(!S.isHost||!S.roomCode)return;
+    hostRestoring=true;
+    if(peer)try{peer.destroy()}catch(e){}
+    setStatus('房主连接恢复中...');
+    retryPeer(RP+S.roomCode,0,()=>{hostRestoring=false;showToast('房主连接已恢复');broadcastPL();saveSession()})
+  },800)
+};
 
 const createRoom=()=>{const name=$('input-name').value.trim();if(!name){showToast('请输入昵称');return}
   resetHostRuntime();
@@ -377,25 +409,48 @@ const createRoom=()=>{const name=$('input-name').value.trim();if(!name){showToas
       $('lobby-room-code').textContent=S.roomCode;showView('lobby');broadcastPL();$('btn-start').style.display='block'}
     saveSession()})};
 
-const retryPeer=(id,n,ok)=>{if(n>5){$('home-status').textContent='创建失败';return}if(n>0)$('home-status').textContent='重连 '+n+'/5';
-  peer=new Peer(id);peer.on('open',()=>{setupHost();ok()});peer.on('error',e=>{if(e.type==='unavailable-id'){peer.destroy();setTimeout(()=>retryPeer(id,n+1,ok),3000)}else $('home-status').textContent='错误: '+e.type})};
+const retryPeer=(id,n,ok)=>{if(n>5){setStatus('创建失败');if(S.isHost)hostRestoring=false;return}if(n>0)setStatus('重连 '+n+'/5');
+  peer=new Peer(id);peer.on('open',()=>{setupHost();ok()});
+  peer.on('disconnected',()=>{setStatus('房主连接断开，恢复中...');restoreHostPeer()});
+  peer.on('close',()=>{if(S.isHost&&!hostRestoring&&!suppressHostClose)restoreHostPeer()});
+  peer.on('error',e=>{if(e.type==='unavailable-id'){suppressHostClose=true;peer.destroy();setTimeout(()=>{suppressHostClose=false;retryPeer(id,n+1,ok)},3000)}else{setStatus('错误: '+e.type);if(S.isHost)restoreHostPeer()}})};
 
+const startHeartbeat=()=>{
+  if(heartbeatTimer)clearInterval(heartbeatTimer);
+  heartbeatTimer=setInterval(()=>{
+    if(S.isHost||!S.myName||!S.roomCode||document.hidden)return;
+    if(!isClientOpen()){scheduleClientReconnect('heartbeat_closed');return}
+    if(lastClientDataAt&&Date.now()-lastClientDataAt>HEARTBEAT_MS*4){try{clientConn.close()}catch(e){}scheduleClientReconnect('heartbeat_stale');return}
+    try{clientConn.send(JSON.stringify({type:'ping'}))}catch(e){scheduleClientReconnect('heartbeat_send')}
+  },HEARTBEAT_MS)
+};
+const resumeNetwork=()=>{
+  if(S.isHost){restoreHostPeer();return}
+  if(!S.myName||!S.roomCode)return;
+  if(!isClientOpen())scheduleClientReconnect('resume');
+  else{lastClientDataAt=Date.now();try{clientConn.send(JSON.stringify({type:'ping'}))}catch(e){scheduleClientReconnect('resume_ping')}}
+};
 const joinRoom=(name,code)=>{name=name||$('input-name').value.trim();code=code||$('input-room').value.trim().toUpperCase();
   if(!name){showToast('请输入昵称');return}if(!code||code.length<4){showToast('请输入房间码');return}
-  S.myName=name;S.roomCode=code;S.isHost=false;S.tts=false;$('home-status').textContent='加入中...';S.reconnAttempts=0;doConn(name,code)};
-const doConn=(name,code)=>{if(peer)try{peer.destroy()}catch(e){}peer=new Peer();
+  S.myName=name;S.roomCode=code;S.isHost=false;S.tts=false;setStatus('加入中...');S.reconnAttempts=0;stopClientReconnect();doConn(name,code,false)};
+const doConn=(name,code,isRetry=false)=>{clientConnecting=true;const seq=++connectSeq;if(peer)try{peer.destroy()}catch(e){}peer=new Peer();
+  const active=()=>seq===connectSeq;
+  let connectTimer=setTimeout(()=>{if(!active())return;clientConnecting=false;scheduleClientReconnect('connect_timeout')},8000);
+  const finishConnect=()=>{if(!active())return false;if(connectTimer){clearTimeout(connectTimer);connectTimer=null}clientConnecting=false;return true};
+  const failConnect=reason=>{if(finishConnect())scheduleClientReconnect(reason)};
   peer.on('open',()=>{const c=peer.connect(RP+code,{reliable:true});
-    c.on('open',()=>{clientConn=c;S.reconnAttempts=0;c.send(JSON.stringify({type:'join',name}));
-      c.on('data',raw=>handleSM(typeof raw==='string'?JSON.parse(raw):raw));
+    c.on('open',()=>{if(!finishConnect())return;clientConn=c;stopClientReconnect();S.reconnAttempts=0;lastClientDataAt=Date.now();setStatus('已连接');c.send(JSON.stringify({type:'join',name}));
+      c.on('data',raw=>{lastClientDataAt=Date.now();const msg=typeof raw==='string'?JSON.parse(raw):raw;if(msg.type==='pong')return;handleSM(msg)});
+      startHeartbeat();
       if(S.gameState==='home'){$('lobby-room-code').textContent=code;showView('lobby')}saveSession()});
-    c.on('close',()=>{clientConn=null;showToast('断线，重连中...');autoRC()});c.on('error',()=>autoRC())});
-  peer.on('error',e=>{if(S.reconnAttempts>0)autoRC();else $('home-status').textContent=e.type==='peer-unavailable'?'房间不存在':'错误: '+e.type})};
-const autoRC=()=>{if(S.reconnAttempts>=10){showToast('重连失败');return}S.reconnAttempts++;setTimeout(()=>doConn(S.myName,S.roomCode),3000)};
+    c.on('close',()=>failConnect('close'));c.on('error',()=>failConnect('conn_error'))});
+  peer.on('error',e=>{finishConnect();if(e.type==='peer-unavailable')setStatus(isRetry?'房主暂时不可达，继续重连...':'暂时找不到房间，正在重试...');else setStatus('连接错误: '+e.type);scheduleClientReconnect(e.type)})};
 const rejoinRoom=()=>{const s=loadSession();if(!s)return;$('input-name').value=s.name;if(s.isHost)createRoom();else joinRoom(s.name,s.roomCode)};
 
 // ============ MSG HANDLERS ============
 const handleCM=(pid,msg)=>{if(!S.isHost)return;
   switch(msg.type){
+    case'ping':{sendTo(pid,{type:'pong'});break}
     case'join':{
       const pend=H.pendingReconnect.get(msg.name);const ex=[...H.players.entries()].find(([,p])=>p.name===msg.name);
       if(pend){H.players.set(pid,{name:msg.name,...pend});H.pendingReconnect.delete(msg.name);
@@ -414,20 +469,38 @@ const handleCM=(pid,msg)=>{if(!S.isHost)return;
     case'witch_vote':{const p=H.players.get(pid);if(p){H.witchVotes.set(p.name,msg.target);bcastWV()}break}
     case'dawn_vote':{const p=H.players.get(pid);if(p){H.dawnVotes.set(p.name,msg.target);bcastDV()}break}
     case'constable_save':{H.constableSave=msg.target;if(resolveCS){resolveCS();resolveCS=null}break}
-    case'confess_response':{const p=H.players.get(pid);if(p&&p.alive){H.confessResponses.add(p.name);if(msg.confess)H.confessions.add(p.name);if(H.confessResponses.size>=getAlive().length)resolveNight()}break}
+    case'confess_response':{const p=H.players.get(pid);if(p&&p.alive){H.confessResponses.add(p.name);if(p.name!==H.constableSave&&msg.confess)H.confessions.add(p.name);if((S.gameState==='night_confess'||H.phaseCtx?.type==='night_confess')&&H.confessResponses.size>=getAlive().length)resolveNight()}break}
     case'conspiracy_response':{const p=H.players.get(pid);if(p){H.conspiracyResponses.set(p.name,msg);const old=p.role;const nr=resolveRole(p.role,msg.gotCard,msg.lostConstable);if(nr!==old)addHistory(pid,old,nr,'传染');p.role=nr}checkCDone();break}
   }
+};
+const startNightConfess=protectedName=>{
+  const saved=protectedName||'';
+  S.gameState='night_confess';S.protectedTarget=saved;
+  if(S.isHost){
+    H.phaseCtx={type:'night_confess',endsAt:Date.now()+CONFESS_TIME*1000,protectedName:saved};
+    if(saved)H.confessResponses.add(saved)
+  }
+  showConfessView(CONFESS_TIME,false,false,saved);
+  say(saved?'是否有人要自首，'+saved+' 已被警长保护，不需要自首，其余玩家限时十五秒':'是否有人要自首，限时十五秒');
+  if(S.isHost){
+    if(H.confessResponses.size>=getAlive().length)setTimeout(resolveNight,0);
+    setTimeout(()=>{if(S.gameState==='night_confess')resolveNight()},(CONFESS_TIME+3)*1000)
+  }
+};
+const showProtectionReveal=protectedName=>{
+  showView('result');$('result-icon').textContent='🛡️';$('result-title').textContent='警长保护了 '+protectedName;
+  $('result-title').style.color='#4a8ac0';$('result-desc').textContent=protectedName+' 本轮不需要自首';$('btn-result-continue').style.display='none'
 };
 const handleSM=msg=>{
   switch(msg.type){
     case'player_list':S.seatOrder=msg.seatOrder||[];if(msg.isLobby)renderLobby(msg.players);break;
-    case'join_rejected':showToast(msg.reason);showView('home');break;
+    case'join_rejected':stopClientReconnect();showToast(msg.reason);showView('home');break;
     case'rejoin_sync':S.round=msg.round;S.myRole=msg.role;S.seatOrder=msg.seatOrder||[];S.blackCatHolder=msg.blackCatHolder||'';S.dawnDone=msg.dawnDone;
       S.alive=msg.players.find(p=>p.name===S.myName)?.alive!==false;$('id-btn').style.display='flex';
       if(msg.actualState==='day'){S.gameState='day';showDayView(msg.players)}
       else{S.gameState='waiting';showView('spectate');$('spectate-text').textContent=msg.actualState==='phase'?'正在同步当前流程...':'等待中';$('spectate-hint').textContent=msg.actualState==='phase'?'':'本轮结束后同步'}showToast('已重连');break;
-    case'game_start':S.gameState='day';S.round=1;S.alive=true;S.seatOrder=msg.seatOrder||[];$('id-btn').style.display='flex';showDayView(msg.players);break;
-    case'game_reset':S.gameState='home';S.round=0;S.dawnDone=false;S.blackCatHolder='';S.alive=true;S.myRole='villager';$('id-btn').style.display='none';showView('lobby');break;
+    case'game_start':S.gameState='day';S.round=1;S.protectedTarget='';S.alive=true;S.seatOrder=msg.seatOrder||[];$('id-btn').style.display='flex';showDayView(msg.players);break;
+    case'game_reset':S.gameState='home';S.round=0;S.dawnDone=false;S.blackCatHolder='';S.protectedTarget='';S.alive=true;S.myRole='villager';$('id-btn').style.display='none';showView('lobby');break;
     case'phase':handlePhase(msg);break;
     case'night_witch_turn':S.gameState='night_witch';S.witchCount=msg.wc||1;showWitchView(msg.companions,msg.players,false);break;
     case'dawn_witch_turn':S.gameState='dawn_witch';S.witchCount=msg.wc||1;showWitchView(msg.companions,msg.players,true);break;
@@ -435,14 +508,15 @@ const handleSM=msg=>{
     case'night_constable_turn':S.gameState='night_constable';showConstableView(msg.players);break;
     case'witch_votes_update':case'dawn_votes_update':updateVotes(msg);break;
     case'vote_confirmed':showDarkScreen('请闭眼等待','已确认目标');break;
-    case'night_open_eyes':S.gameState='night_open';showView('open-eyes');say('天亮了，所有人请睁眼').then(()=>pause(2000)).then(()=>{
-      S.gameState='night_confess';if(S.isHost)H.phaseCtx={type:'night_confess',endsAt:Date.now()+CONFESS_TIME*1000};showConfessView();say('是否有人要自首，限时十五秒');
-      if(S.isHost)setTimeout(()=>{if(S.gameState==='night_confess')resolveNight()},(CONFESS_TIME+3)*1000)});break;
-    case'night_confess_sync':S.gameState='night_confess';showConfessView(msg.remaining,msg.responded,msg.confessed);break;
-    case'night_result':S.gameState='night_result';if(msg.died&&msg.target===S.myName)S.alive=false;showNightResult(msg);break;
+    case'night_open_eyes':S.gameState='night_open';S.protectedTarget=msg.protectedName||'';showView('open-eyes');say('天亮了，所有人请睁眼').then(()=>pause(2000)).then(()=>{
+      if(!S.protectedTarget)return;
+      showProtectionReveal(S.protectedTarget);return say('警长昨晚保护了 '+S.protectedTarget).then(()=>pause(2000))
+    }).then(()=>{if(S.gameState==='night_open')startNightConfess(S.protectedTarget)});break;
+    case'night_confess_sync':S.gameState='night_confess';S.protectedTarget=msg.protectedName||'';showConfessView(msg.remaining,msg.responded,msg.confessed,S.protectedTarget);break;
+    case'night_result':S.gameState='night_result';S.protectedTarget='';if(msg.died&&msg.target===S.myName)S.alive=false;showNightResult(msg);break;
     case'dawn_result':S.dawnDone=true;S.blackCatHolder=msg.t;showDawnResult(msg.t);break;
     case'conspiracy_start':case'conspiracy_rollback':S.gameState='conspiracy';if(msg.type==='conspiracy_rollback'){S.myRole=msg.myRole||S.myRole;showToast('房主要求重新确认')}showConspiracyFlow(msg);break;
-    case'back_to_day':S.gameState='day';S.round=msg.round||S.round;S.seatOrder=msg.seatOrder||S.seatOrder;showDayView(msg.players);break;
+    case'back_to_day':S.gameState='day';S.protectedTarget='';S.round=msg.round||S.round;S.seatOrder=msg.seatOrder||S.seatOrder;showDayView(msg.players);break;
     case'game_over':showGameOver(msg);break;
   }
 };
@@ -457,14 +531,19 @@ const broadcastPL=()=>{const ps=getOrdered().map(p=>({name:p.name,alive:p.alive,
 const startGame=()=>{if(!S.isHost||H.players.size<2)return;
   let hw=false,cc=0;H.players.forEach(p=>{if(isW(p.role))hw=true;if(isC(p.role))cc++});
   if(!hw){showToast('没有女巫');return}if(cc>1){showToast('只能有1个警长，当前'+cc+'人');return}
-  H.gameStarted=true;S.round=1;S.gameState='day';H.phaseCtx=null;H.roleHistory.clear();H.savedPlayerOrder=H.playerOrder.map(id=>H.players.get(id)?.name).filter(Boolean);
+  H.gameStarted=true;S.round=1;S.gameState='day';S.protectedTarget='';H.phaseCtx=null;H.roleHistory.clear();H.savedPlayerOrder=H.playerOrder.map(id=>H.players.get(id)?.name).filter(Boolean);
   H.players.forEach((p,id)=>{if(p.role!=='villager')addHistory(id,null,p.role,'初始身份')});
   const ps=getOrdered().map(p=>({name:p.name,alive:p.alive}));
   broadcast({type:'game_start',players:ps,seatOrder:H.playerOrder.map(id=>H.players.get(id)?.name).filter(Boolean)});saveSession()};
-const triggerPhase=p=>{if(!S.isHost||S.gameState!=='day')return;
+const triggerPhase=(p,confirmed=false)=>{if(!S.isHost||S.gameState!=='day')return;
+  if((p==='dawn'||p==='night')&&!confirmed){
+    if(p==='dawn'&&S.dawnDone)return;
+    const label=p==='dawn'?'黎明':'夜晚';
+    showConfirm('确认开始'+label,'开始后会立即进入闭眼流程。',()=>triggerPhase(p,true));return
+  }
   if(p==='dawn'){if(S.dawnDone)return;runDawn()}else if(p==='night')runNight();else if(p==='conspiracy')runConspiracy()};
 const confirmReset=()=>showConfirm('重新开始','所有人回到大厅？',doReset);
-const doReset=()=>{H.gameStarted=false;H.constableRevealed=false;gameEnded=false;S.round=0;S.dawnDone=false;S.blackCatHolder='';S.alive=true;S.myRole='villager';S.gameState='home';H.phaseCtx=null;clearAllReconnectGrace();H.pendingReconnect.clear();H.savedPlayerOrder=[];
+const doReset=()=>{H.gameStarted=false;H.constableRevealed=false;gameEnded=false;S.round=0;S.dawnDone=false;S.blackCatHolder='';S.protectedTarget='';S.alive=true;S.myRole='villager';S.gameState='home';H.phaseCtx=null;clearAllReconnectGrace();H.pendingReconnect.clear();H.savedPlayerOrder=[];
   H.players.forEach(p=>{p.alive=true;p.role='villager';p.roleSelected=false});H.roleHistory.clear();
   broadcast({type:'game_reset'});broadcastPL();$('btn-start').style.display='block';$('host-controls').style.display='none';saveSession()};
 
@@ -503,11 +582,11 @@ const bcastDV=()=>{
 
 // -- NIGHT (async) --
 const runNight=async()=>{
-  H.witchVotes.clear();H.constableSave=null;H.confessions.clear();H.confessResponses.clear();H.killTarget=null;clearAllReconnectGrace();S.gameState='night_close';H.phaseCtx={type:'night_close',hint:'女巫正在行动...'};
+  H.witchVotes.clear();H.constableSave=null;H.confessions.clear();H.confessResponses.clear();H.killTarget=null;S.protectedTarget='';clearAllReconnectGrace();S.gameState='night_close';H.phaseCtx={type:'night_close',hint:'女巫正在行动...'};
   broadcast({type:'phase',text:'天黑请闭眼',narr:'天黑请闭眼，所有人请闭上眼睛',p:'close'});
   await say('天黑请闭眼，所有人请闭上眼睛');await pause(3000);
   const ws=[],al=[];H.players.forEach((p,id)=>{if(p.alive)al.push({id,name:p.name});if(p.alive&&isW(p.role))ws.push({id,name:p.name})});
-  if(ws.length===0){await say('本轮没有女巫，天亮了');S.gameState='night_open';H.phaseCtx={type:'night_open'};broadcast({type:'night_open_eyes'});return}
+  if(ws.length===0){await say('本轮没有女巫，天亮了');S.gameState='night_open';H.phaseCtx={type:'night_open',protectedName:''};broadcast({type:'night_open_eyes',protectedName:''});return}
   broadcast({type:'phase',text:'女巫请睁眼',narr:'女巫请睁眼',p:'witch'});
   await say('女巫请睁眼');await pause(1500);await say('请选择今晚要杀害的人');
   const wn=ws.map(w=>w.name),tgts=al.map(a=>a.name);H.phaseCtx={type:'night_witch',companions:wn,players:tgts,requiredNames:[...wn]};
@@ -534,7 +613,7 @@ const runNight=async()=>{
       await say('警长请闭眼');await pause(3000);
     }
   }
-  await say('天亮了，所有人请睁眼');S.gameState='night_open';H.phaseCtx={type:'night_open'};broadcast({type:'night_open_eyes'});
+  await say('天亮了，所有人请睁眼');S.gameState='night_open';H.phaseCtx={type:'night_open',protectedName:H.constableSave||''};broadcast({type:'night_open_eyes',protectedName:H.constableSave||''});
 };
 
 const bcastWV=()=>{
@@ -550,7 +629,7 @@ const bcastWV=()=>{
 
 const resolveNight=()=>{if(S.gameState==='night_result')return;S.gameState='night_result';
   if(S.confessTimer){clearInterval(S.confessTimer);S.confessTimer=null}
-  const t=H.killTarget,sv=H.constableSave,cf=H.confessions;let died=false,m='',saved=!!(t&&t===sv);clearAllReconnectGrace();
+  const t=H.killTarget,sv=H.constableSave,cf=H.confessions;if(sv)cf.delete(sv);let died=false,m='',saved=!!(t&&t===sv);clearAllReconnectGrace();
   if(!t)m='平安夜';else if(t===sv)m=t+' 被袭击，但被警长保护了!';
   else if(cf.has(t))m=t+' 被袭击，但自首免死!';else{died=true;m=t+' 被女巫杀害了!';H.players.forEach(p=>{if(p.name===t)p.alive=false})}
   const payload={target:t,saved,died,resultMsg:m,confessedList:[...cf],otherConfessed:[...cf].filter(n=>n!==t)};H.phaseCtx={type:'night_result',payload};
@@ -573,7 +652,7 @@ const managePlayer=(name,action)=>{if(!S.isHost)return;
     else if(action==='mark_dead'){p.alive=false}
     else if(action==='give_cat'){S.blackCatHolder=name;showToast('黑猫转移给 '+name)}});
   bcastDay();setTimeout(checkWin,300);saveSession()};
-const bcastDay=()=>{const ps=getOrdered().map(p=>({name:p.name,alive:p.alive}));S.gameState='day';H.phaseCtx=null;clearAllReconnectGrace();broadcast({type:'back_to_day',players:ps,round:S.round,seatOrder:H.playerOrder.map(id=>H.players.get(id)?.name).filter(Boolean)})};
+const bcastDay=()=>{const ps=getOrdered().map(p=>({name:p.name,alive:p.alive}));S.gameState='day';S.protectedTarget='';H.phaseCtx=null;clearAllReconnectGrace();broadcast({type:'back_to_day',players:ps,round:S.round,seatOrder:H.playerOrder.map(id=>H.players.get(id)?.name).filter(Boolean)})};
 
 // -- CONSPIRACY --
 const runConspiracy=()=>{H.conspiracyResponses.clear();H.phaseCtx={type:'conspiracy'};$('host-controls').style.display='none';
@@ -635,11 +714,13 @@ const showConstableView=ps=>{showView('constable');S.selectedTarget='';
   $('constable-targets').querySelectorAll('.select-item').forEach(el=>el.addEventListener('click',()=>{
     el.parentElement.querySelectorAll('.select-item').forEach(e=>e.classList.remove('selected'));el.classList.add('selected');S.selectedTarget=el.dataset.name;$('btn-constable-confirm').disabled=false}));
   $('btn-constable-confirm').disabled=true;if(S.isHost)$('host-controls').style.display='none'};
-const showConfessView=(remaining=CONFESS_TIME,responded=false,confessed=false)=>{showView('confess');
+const showConfessView=(remaining=CONFESS_TIME,responded=false,confessed=false,protectedName=S.protectedTarget)=>{showView('confess');
+  const saved=protectedName||'';S.protectedTarget=saved;
+  if(S.confessTimer){clearInterval(S.confessTimer);S.confessTimer=null}
   if(!S.alive){$('confess-info').textContent='已阵亡';$('confess-btns').style.display='none';$('confess-timer').textContent='-';return}
+  if(saved&&S.myName===saved){S.confessed=true;$('confess-info').textContent='你已被警长保护，本轮不需要自首';$('confess-btns').style.display='none';$('confess-timer').textContent='-';return}
   $('confess-btns').style.display='flex';document.querySelectorAll('#confess-btns .btn').forEach(b=>b.disabled=responded);S.confessed=responded;
-  let rem=Math.max(0,remaining|0);$('confess-timer').textContent=rem;$('confess-info').textContent=responded?(confessed?'已自首':'不自首'):'';
-  if(S.confessTimer)clearInterval(S.confessTimer);
+  let rem=Math.max(0,remaining|0);$('confess-timer').textContent=rem;$('confess-info').textContent=responded?(confessed?'已自首':'不自首'):(saved?'警长保护了 '+saved:'');
   if(responded||rem<=0){S.confessTimer=null;if(rem<=0&&!responded)doConfess(false);return}
   S.confessTimer=setInterval(()=>{rem--;$('confess-timer').textContent=rem;if(rem<=0){clearInterval(S.confessTimer);S.confessTimer=null;if(!S.confessed)doConfess(false)}},1000)};
 const showNightResult=d=>{showView('result');
@@ -696,7 +777,7 @@ const confirmWitchAction=()=>{if(!S.selectedTarget)return;const isDawn=S.gameSta
   $('btn-witch-confirm').disabled=true;$('witch-status').textContent='已提交';$('btn-witch-confirm').textContent='已提交'};
 const confirmConstableAction=()=>{if(!S.selectedTarget)return;sendHost({type:'constable_save',target:S.selectedTarget});
   $('btn-constable-confirm').disabled=true;$('btn-constable-confirm').textContent='已保护';showDarkScreen('请闭眼等待','')};
-const doConfess=c=>{if(S.confessed)return;S.confessed=true;if(S.confessTimer){clearInterval(S.confessTimer);S.confessTimer=null}
+const doConfess=c=>{if(S.confessed)return;if(S.protectedTarget&&S.myName===S.protectedTarget){$('confess-info').textContent='你已被警长保护，本轮不需要自首';return}S.confessed=true;if(S.confessTimer){clearInterval(S.confessTimer);S.confessTimer=null}
   sendHost({type:'confess_response',confess:c,name:S.myName});$('confess-info').textContent=c?'已自首':'不自首';
   document.querySelectorAll('#confess-btns .btn').forEach(b=>b.disabled=true)};
 const resultContinue=()=>{if(S.isHost)bcastDay()};
@@ -707,8 +788,13 @@ const movePlayer=(i,d)=>{if(!S.isHost)return;const n=i+d;if(n<0||n>=H.playerOrde
 document.addEventListener('DOMContentLoaded',()=>{
   $('input-room')?.addEventListener('input',e=>{e.target.value=e.target.value.toUpperCase()});
   const s=loadSession();if(s?.roomCode){$('input-name').value=s.name||'';$('rejoin-section').style.display='block';
-    $('rejoin-info').textContent=(s.isHost?'房主 | ':'')+'房间:'+s.roomCode+' 昵称:'+s.name}
+	    $('rejoin-info').textContent=(s.isHost?'房主 | ':'')+'房间:'+s.roomCode+' 昵称:'+s.name}
+	  $('app-version').textContent='v'+APP_VERSION;
   window.addEventListener('beforeunload',e=>{if(S.gameState!=='home'){e.preventDefault();e.returnValue=''}});
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden)resumeNetwork()});
+  window.addEventListener('pageshow',resumeNetwork);
+  window.addEventListener('focus',resumeNetwork);
+  window.addEventListener('online',resumeNetwork);
   $('tts-btn').textContent=S.tts?'\u{1F50A}':'\u{1F507}'});
 </script>
 </body>
