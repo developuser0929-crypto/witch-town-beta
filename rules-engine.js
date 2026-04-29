@@ -80,6 +80,6 @@
   const accusationTotal=p=>p.red.reduce((sum,c)=>sum+(c.points||0),0);
   const revealThreshold=p=>p.roleCard?.key==='george'?8:7;
   const publicPlayer=p=>({name:p.name,alive:p.alive,tryals:p.tryals.map(t=>({slot:t.slot,revealed:t.revealed,name:t.revealed?t.name:''})),roleCard:p.roleCard?{key:p.roleCard.key,name:p.roleCard.name,text:p.roleCard.text}:null,redTotal:accusationTotal(p),blue:p.blue.map(c=>c.name),stocks:p.stocks});
-  const privatePlayer=p=>({...publicPlayer(p),hand:p.hand.map(c=>({id:c.id,key:c.key,name:c.name,type:c.type,text:c.text,points:c.points||0})),tryals:p.tryals.map(t=>({slot:t.slot,revealed:t.revealed,name:t.name,key:t.key}))});
+  const privatePlayer=p=>({...publicPlayer(p),used:p.used||{},hand:p.hand.map(c=>({id:c.id,key:c.key,name:c.name,type:c.type,text:c.text,points:c.points||0})),tryals:p.tryals.map(t=>({slot:t.slot,revealed:t.revealed,name:t.name,key:t.key}))});
   window.SALEM_RULES={VERSION,TRYAL_SETUPS,PLAY_CARDS,TOWN_ROLES,setupGame,buildPlayingDeck,buildTryalDeck,getCard,roleSummary,isWitchPlayer,isConstablePlayer,accusationTotal,revealThreshold,publicPlayer,privatePlayer,shuffle};
 })();

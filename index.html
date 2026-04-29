@@ -97,6 +97,8 @@ input::placeholder{color:var(--text3)}input:focus{border-color:var(--gold)}
 	.card-panel .section-title{font-size:12px;color:var(--gold);margin:10px 0 6px}
 	.card-row{display:flex;gap:6px;overflow-x:auto;padding-bottom:4px}
 	.card-chip{flex:0 0 auto;max-width:160px;padding:8px;border:1px solid var(--border);border-radius:8px;background:var(--bg3);color:var(--text);font-size:12px;text-align:left}
+	button.card-chip{cursor:pointer}
+	.card-chip.selected{border-color:var(--gold);background:#2a2418}
 	.card-chip.red{border-color:var(--red)}.card-chip.green{border-color:#356b45}.card-chip.blue{border-color:#345b86}.card-chip.black{border-color:#777}
 	.card-chip .name{font-weight:bold;margin-bottom:4px}.card-chip .text{color:var(--text2);line-height:1.4}
 </style>
@@ -314,8 +316,16 @@ const getConspiracyPayload=name=>{const order=H.playerOrder.filter(id=>H.players
   if(i<0||!p)return null;
   return{up:names[(i-1+names.length)%names.length],dn:names[(i+1)%names.length],cat:name===S.blackCatHolder,myRole:p.role,cr:H.constableRevealed}};
 const findCardPlayer=name=>H.cardGame?.players.find(p=>p.name===name);
+const getPendingFor=(pending,name)=>{
+  if(!pending)return null;
+  if(pending.actor!==name)return{type:pending.type,actor:pending.actor,target:pending.target||'',responses:pending.responses?Object.keys(pending.responses):[]};
+  const out={type:pending.type,actor:pending.actor,target:pending.target||'',after:pending.after||'',annDrawn:!!pending.annDrawn,responses:pending.responses?Object.keys(pending.responses):[]};
+  if(pending.type==='samuel_pick')out.cards=(pending.cards||[]).map(c=>({id:c.id,key:c.key,name:c.name,type:c.type,text:c.text,points:c.points||0}));
+  if(pending.type==='tituba_order')out.cards=(pending.cards||[]).map(c=>({id:c.id,key:c.key,name:c.name,type:c.type,text:c.text,points:c.points||0}));
+  return out
+};
 const getCardStateFor=name=>{const g=H.cardGame;if(!g)return null;const me=findCardPlayer(name);if(!me)return null;
-  return{version:g.version,mode:g.mode,phase:g.phase,round:g.round,turn:g.players[g.turnIndex]?.name||'',deckCount:g.deck.length,discardCount:g.discard.length,log:g.log.slice(-6),players:g.players.map(SALEM_RULES.publicPlayer),me:SALEM_RULES.privatePlayer(me),pending:g.pending||null}};
+  return{version:g.version,mode:g.mode,phase:g.phase,round:g.round,turn:g.players[g.turnIndex]?.name||'',deckCount:g.deck.length,discardCount:g.discard.length,log:g.log.slice(-6),players:g.players.map(SALEM_RULES.publicPlayer),me:SALEM_RULES.privatePlayer(me),pending:getPendingFor(g.pending,name)}};
 const syncRolesFromCards=()=>{if(!H.cardGame)return;H.players.forEach(p=>{const cp=findCardPlayer(p.name);if(cp){p.alive=cp.alive;p.role=SALEM_RULES.roleSummary(cp,H.cardGame.constableRevealed)}})};
 const sendCardDay=()=>{if(!S.isHost||!H.cardGame)return false;syncRolesFromCards();const ps=getOrdered().map(p=>({name:p.name,alive:p.alive}));S.gameState='day';S.round=H.cardGame.round;H.phaseCtx=null;clearAllReconnectGrace();
   H.players.forEach((p,id)=>sendTo(id,{type:'back_to_day',players:ps,round:S.round,seatOrder:H.playerOrder.map(pid=>H.players.get(pid)?.name).filter(Boolean),cardState:getCardStateFor(p.name)}));return true};
@@ -488,12 +498,17 @@ const handleCM=(pid,msg)=>{if(!S.isHost)return;
     case'witch_vote':{const p=H.players.get(pid);if(p){H.witchVotes.set(p.name,msg.target);bcastWV()}break}
     case'dawn_vote':{const p=H.players.get(pid);if(p){H.dawnVotes.set(p.name,msg.target);bcastDV()}break}
     case'constable_save':{H.constableSave=msg.target;if(resolveCS){resolveCS();resolveCS=null}break}
-    case'confess_response':{const p=H.players.get(pid);if(p&&p.alive){H.confessResponses.add(p.name);if(p.name!==H.constableSave&&msg.confess)H.confessions.add(p.name);if((S.gameState==='night_confess'||H.phaseCtx?.type==='night_confess')&&H.confessResponses.size>=getAlive().length)resolveNight()}break}
+    case'confess_response':{const p=H.players.get(pid);if(p&&p.alive){H.confessResponses.add(p.name);if(p.name!==H.constableSave&&msg.confess){const cp=findCardPlayer(p.name);if(cp&&msg.william&&cp.roleCard?.key==='william'&&!cp.used.william){cp.used.william=true;cardLog('威廉·菲普斯自首且不用翻审判牌')}else if(cp){revealCardTryal(cp,msg.revealSlot|0,'confess');syncRolesFromCards()}H.confessions.add(p.name)}if((S.gameState==='night_confess'||H.phaseCtx?.type==='night_confess')&&H.confessResponses.size>=getAlive().length)resolveNight()}break}
     case'card_draw':{handleCardDraw(pid);break}
     case'card_play':{handleCardPlay(pid,msg);break}
     case'card_end_turn':{handleCardEndTurn(pid);break}
     case'card_reveal_tryal':{handleCardReveal(pid,msg);break}
     case'card_conspiracy_pass':{handleCardConspiracyPass(pid,msg);break}
+    case'card_ann_draw':{handleAnnDraw(pid);break}
+    case'card_samuel_start':{handleSamuelStart(pid);break}
+    case'card_samuel_take':{handleSamuelTake(pid,msg);break}
+    case'card_tituba_start':{handleTitubaStart(pid);break}
+    case'card_tituba_order':{handleTitubaOrder(pid,msg);break}
     case'conspiracy_response':{const p=H.players.get(pid);if(p){H.conspiracyResponses.set(p.name,msg);const old=p.role;const nr=resolveRole(p.role,msg.gotCard,msg.lostConstable);if(nr!==old)addHistory(pid,old,nr,'传染');p.role=nr}checkCDone();break}
   }
 };
@@ -547,17 +562,45 @@ const handleBlackCard=card=>{
   if(card.key==='night'){syncRolesFromCards();sendCardDay();setTimeout(()=>runNight(),500);return}
   if(card.key==='conspiracy'){startCardConspiracy();return}
 };
+const resolveDrawnBlack=drawn=>{
+  const black=drawn.find(c=>c.type==='black');if(black){handleBlackCard(black);return true}return false
+};
 const handleCardDraw=pid=>{
   const actor=cardActor(pid),cur=currentCardPlayer(),g=H.cardGame;if(!actor||!cur||actor.name!==cur.name||g.pending)return;
   if(actor.stocks>0){actor.stocks--;cardLog(actor.name+' 因枷锁跳过回合');nextCardTurn();sendCardDay();return}
   const drawn=[drawOneCard(actor),drawOneCard(actor)].filter(Boolean);cardLog(actor.name+' 抽了 '+drawn.length+' 张牌');
   if(actor.roleCard?.key==='giles'&&drawn.length===2&&drawn.every(c=>c.key==='accusation')){const extra=drawOneCard(actor);if(extra){drawn.push(extra);cardLog('贾尔斯·科里展示2张指控并额外抽1张')}}
-  const black=drawn.find(c=>c.type==='black');if(black){handleBlackCard(black);return}
+  if(resolveDrawnBlack(drawn))return;
   sendCardDay()
 };
 const handleCardEndTurn=pid=>{
   const actor=cardActor(pid),cur=currentCardPlayer();if(!actor||!cur||actor.name!==cur.name||H.cardGame.pending)return;
   nextCardTurn();sendCardDay()
+};
+const handleAnnDraw=pid=>{
+  const actor=cardActor(pid),g=H.cardGame,p=g?.pending;if(!actor||!p||p.actor!==actor.name||actor.roleCard?.key!=='ann'||p.type!=='tryal_reveal'||p.annDrawn)return;
+  p.annDrawn=true;const drawn=[drawOneCard(actor),drawOneCard(actor)].filter(Boolean);cardLog('安·普特南在翻牌前抽了2张');if(resolveDrawnBlack(drawn))return;sendCardDay()
+};
+const handleSamuelStart=pid=>{
+  const actor=cardActor(pid),cur=currentCardPlayer(),g=H.cardGame;if(!actor||!cur||actor.name!==cur.name||g.pending||actor.roleCard?.key!=='samuel'||(actor.used?.samuel||0)>=2)return;
+  const cards=g.discard.filter(c=>c.type!=='black');if(cards.length===0){showToast('弃牌堆没有可拿的非黑牌');return}
+  g.pending={type:'samuel_pick',actor:actor.name,cards,selected:[]};sendCardDay()
+};
+const handleSamuelTake=(pid,msg)=>{
+  const actor=cardActor(pid),g=H.cardGame,p=g?.pending;if(!actor||!p||p.actor!==actor.name||p.type!=='samuel_pick')return;
+  const ids=Array.isArray(msg.ids)?msg.ids.slice(0,2):[];ids.forEach(id=>{const i=g.discard.findIndex(c=>c.id===id&&c.type!=='black');if(i>=0)actor.hand.push(g.discard.splice(i,1)[0])});
+  actor.used.samuel=(actor.used.samuel||0)+1;g.pending=null;cardLog('塞缪尔·帕里斯从弃牌堆拿了 '+ids.length+' 张牌');sendCardDay()
+};
+const handleTitubaStart=pid=>{
+  const actor=cardActor(pid),cur=currentCardPlayer(),g=H.cardGame;if(!actor||!cur||actor.name!==cur.name||g.pending||actor.roleCard?.key!=='tituba'||actor.used?.tituba)return;
+  const cards=g.deck.slice(0,3);if(cards.length===0){showToast('牌堆为空');return}
+  g.pending={type:'tituba_order',actor:actor.name,cards};sendCardDay()
+};
+const handleTitubaOrder=(pid,msg)=>{
+  const actor=cardActor(pid),g=H.cardGame,p=g?.pending;if(!actor||!p||p.actor!==actor.name||p.type!=='tituba_order')return;
+  const ids=Array.isArray(msg.ids)?msg.ids:[],current=g.deck.slice(0,p.cards.length),ordered=[];
+  ids.forEach(id=>{const i=current.findIndex(c=>c.id===id);if(i>=0)ordered.push(current.splice(i,1)[0])});
+  ordered.push(...current);g.deck.splice(0,p.cards.length,...ordered);actor.used.tituba=true;g.pending=null;cardLog('蒂图芭调整了牌堆顶部顺序');sendCardDay()
 };
 const handleCardPlay=(_,msg)=>{
   const actor=cardActor(_),cur=currentCardPlayer(),g=H.cardGame;if(!actor||!cur||actor.name!==cur.name||g.pending)return;
@@ -842,6 +885,8 @@ const showConfessView=(remaining=CONFESS_TIME,responded=false,confessed=false,pr
   if(S.confessTimer){clearInterval(S.confessTimer);S.confessTimer=null}
   if(!S.alive){$('confess-info').textContent='已阵亡';$('confess-btns').style.display='none';$('confess-timer').textContent='-';return}
   if(saved&&S.myName===saved){S.confessed=true;$('confess-info').textContent='你已被警长保护，本轮不需要自首';$('confess-btns').style.display='none';$('confess-timer').textContent='-';return}
+  const william=S.cardState?.me?.roleCard?.key==='william'&&!S.cardState?.me?.used?.william;
+  $('confess-btns').innerHTML='<button class="btn btn-primary" style="flex:1" onclick="doConfess(true)">我要自首</button><button class="btn btn-outline" style="flex:1" onclick="doConfess(false)">不自首</button>'+(william?'<button class="btn btn-blue" style="flex:1" onclick="doWilliamConfess()">菲普斯自首免翻牌</button>':'');
   $('confess-btns').style.display='flex';document.querySelectorAll('#confess-btns .btn').forEach(b=>b.disabled=responded);S.confessed=responded;
   let rem=Math.max(0,remaining|0);$('confess-timer').textContent=rem;$('confess-info').textContent=responded?(confessed?'已自首':'不自首'):(saved?'警长保护了 '+saved:'');
   if(responded||rem<=0){S.confessTimer=null;if(rem<=0&&!responded)doConfess(false);return}
@@ -874,19 +919,33 @@ const renderCardPanel=()=>{const cs=S.cardState,el=$('card-panel');if(!el)return
   const hand=my.hand.map(c=>'<div class="card-chip '+esc(c.type)+'"><div class="name">'+esc(c.name)+'</div><div class="text">'+esc(c.text)+'</div>'+(myTurn?'<button class="btn btn-small" onclick="playCardPrompt(\''+esc(c.id)+'\',\''+esc(c.key)+'\')">使用</button>':'')+'</div>').join('');
   const tryals=my.tryals.map(t=>'<div class="card-chip"><div class="name">'+esc(t.name)+'</div><div class="text">'+(t.revealed?'已公开':'未公开')+'</div></div>').join('');
   const pending=renderPendingAction(cs);
+  const roleControls=renderRoleControls(cs,myTurn);
   el.innerHTML='<div class="meta"><span>模式: '+(cs.mode==='character'?'有角色':'无角色')+'</span><span>回合: '+esc(cs.turn||'-')+'</span><span>牌堆: '+cs.deckCount+'</span><span>弃牌: '+cs.discardCount+'</span></div>'+
     (my.roleCard?'<div class="section-title">角色</div><div class="card-chip"><div class="name">'+esc(my.roleCard.name)+'</div><div class="text">'+esc(my.roleCard.text)+'</div></div>':'')+
     '<div class="section-title">我的审判牌</div><div class="card-row">'+tryals+'</div>'+
     '<div class="section-title">我的手牌</div><div class="card-row">'+(hand||'<div class="card-chip"><div class="text">没有手牌</div></div>')+'</div>'+
+    roleControls+
     (myTurn?'<div style="display:flex;gap:8px;margin-top:10px"><button class="btn btn-primary" onclick="sendHost({type:\'card_draw\'})">抽2张</button><button class="btn btn-outline" onclick="sendHost({type:\'card_end_turn\'})">结束回合</button></div>':'')+
     pending+
     '<div class="section-title">最近记录</div><div class="text">'+(cs.log||[]).map(esc).join('<br>')+'</div>'};
+const renderRoleControls=(cs,myTurn)=>{if(!myTurn||!cs.me.roleCard)return'';const key=cs.me.roleCard.key,used=cs.me.used||{};let h='';
+  if(key==='samuel'&&(used.samuel||0)<2)h+='<button class="btn btn-blue" onclick="sendHost({type:\'card_samuel_start\'})">塞缪尔：从弃牌堆拿牌（剩余'+(2-(used.samuel||0))+'次）</button>';
+  if(key==='tituba'&&!used.tituba)h+='<button class="btn btn-blue" onclick="sendHost({type:\'card_tituba_start\'})">蒂图芭：查看并调整牌堆顶3张</button>';
+  return h?'<div class="section-title">角色操作</div>'+h:''};
 const renderPendingAction=cs=>{const p=cs.pending;if(!p)return'';if(p.actor!==S.myName)return'<div class="section-title">等待</div><div class="text">等待 '+esc(p.actor)+' 完成操作</div>';
-  if(p.type==='tryal_reveal'||p.type==='black_cat_reveal'){const target=cs.players.find(x=>x.name===p.target),slots=(target?.tryals||[]).filter(t=>!t.revealed).map(t=>'<button class="btn btn-small" onclick="sendHost({type:\'card_reveal_tryal\',slot:'+t.slot+'})">翻第'+(t.slot+1)+'张</button>').join('');
-    return'<div class="section-title">选择审判牌</div><div style="display:flex;gap:6px;flex-wrap:wrap">'+slots+'</div>'}
+  if(p.type==='tryal_reveal'||p.type==='black_cat_reveal'){const target=cs.players.find(x=>x.name===p.target),slots=(target?.tryals||[]).filter(t=>!t.revealed).map(t=>'<button class="btn btn-small" onclick="sendHost({type:\'card_reveal_tryal\',slot:'+t.slot+'})">翻第'+(t.slot+1)+'张</button>').join(''),ann=cs.me.roleCard?.key==='ann'&&p.type==='tryal_reveal'&&!p.annDrawn?'<button class="btn btn-blue" onclick="sendHost({type:\'card_ann_draw\'})">安·普特南：翻牌前先抽2张</button>':'';
+    return'<div class="section-title">选择审判牌</div>'+ann+'<div style="display:flex;gap:6px;flex-wrap:wrap">'+slots+'</div>'}
   if(p.type==='conspiracy_pass'){const slots=cs.me.tryals.filter(t=>!t.revealed).map(t=>'<button class="btn btn-small" onclick="sendHost({type:\'card_conspiracy_pass\',slot:'+t.slot+'})">传第'+(t.slot+1)+'张</button>').join('');
     return'<div class="section-title">阴谋传递</div><div style="display:flex;gap:6px;flex-wrap:wrap">'+slots+'</div>'}
+  if(p.type==='samuel_pick'){const cards=(p.cards||[]).map(c=>'<button class="card-chip '+esc(c.type)+'" data-pick-id="'+esc(c.id)+'" onclick="toggleCardPick(this,2)" type="button"><div class="name">'+esc(c.name)+'</div><div class="text">'+esc(c.text)+'</div></button>').join('');
+    return'<div class="section-title">塞缪尔·帕里斯</div><div class="text">从弃牌堆选择最多2张非黑牌。</div><div class="card-row">'+cards+'</div><button class="btn btn-primary" onclick="submitSamuelPick()">拿取所选</button><button class="btn btn-outline" onclick="sendHost({type:\'card_samuel_take\',ids:[]})">不拿牌</button>'}
+  if(p.type==='tituba_order'){const cards=(p.cards||[]).map(c=>'<div class="card-chip '+esc(c.type)+'" data-order-id="'+esc(c.id)+'"><div class="name">'+esc(c.name)+'</div><div class="text">'+esc(c.text)+'</div><button class="btn btn-small" onclick="moveOrderCard(this,-1)">前移</button><button class="btn btn-small" onclick="moveOrderCard(this,1)">后移</button></div>').join('');
+    return'<div class="section-title">蒂图芭</div><div class="text">调整牌堆顶部顺序，左边为最先抽到。</div><div class="card-row" id="tituba-order">'+cards+'</div><button class="btn btn-primary" onclick="submitTitubaOrder()">确认顺序</button>'}
   return''};
+const toggleCardPick=(el,max)=>{const row=el.parentElement,selected=row.querySelectorAll('.selected').length;if(el.classList.contains('selected'))el.classList.remove('selected');else if(selected<max)el.classList.add('selected')};
+const submitSamuelPick=()=>{const ids=[...document.querySelectorAll('[data-pick-id].selected')].map(el=>el.dataset.pickId);sendHost({type:'card_samuel_take',ids})};
+const moveOrderCard=(btn,dir)=>{const card=btn.closest('[data-order-id]'),row=card?.parentElement;if(!card||!row)return;if(dir<0&&card.previousElementSibling)row.insertBefore(card,card.previousElementSibling);if(dir>0&&card.nextElementSibling)row.insertBefore(card.nextElementSibling,card)};
+const submitTitubaOrder=()=>{const ids=[...document.querySelectorAll('#tituba-order [data-order-id]')].map(el=>el.dataset.orderId);sendHost({type:'card_tituba_order',ids})};
 const chooseCardTarget=(title,players,cb)=>{showConfirm(title,'选择目标玩家',null,players.map(n=>'<button class="btn btn-primary phase-pick" data-target="'+esc(n)+'">'+esc(n)+'</button>').join('')+'<button class="btn btn-outline" onclick="closeConfirm()">取消</button>');bindConfirmTargets(cb)};
 const playCardPrompt=(cardId,key)=>{
   const cs=S.cardState;if(!cs)return;const names=cs.players.filter(p=>p.alive&&p.name!==S.myName).map(p=>p.name);
@@ -928,9 +987,16 @@ const confirmWitchAction=()=>{if(!S.selectedTarget)return;const isDawn=S.gameSta
   $('btn-witch-confirm').disabled=true;$('witch-status').textContent='已提交';$('btn-witch-confirm').textContent='已提交'};
 const confirmConstableAction=()=>{if(!S.selectedTarget)return;sendHost({type:'constable_save',target:S.selectedTarget});
   $('btn-constable-confirm').disabled=true;$('btn-constable-confirm').textContent='已保护';showDarkScreen('请闭眼等待','')};
-const doConfess=c=>{if(S.confessed)return;if(S.protectedTarget&&S.myName===S.protectedTarget){$('confess-info').textContent='你已被警长保护，本轮不需要自首';return}S.confessed=true;if(S.confessTimer){clearInterval(S.confessTimer);S.confessTimer=null}
-  sendHost({type:'confess_response',confess:c,name:S.myName});$('confess-info').textContent=c?'已自首':'不自首';
+const sendConfess=(c,extra={})=>{S.confessed=true;if(S.confessTimer){clearInterval(S.confessTimer);S.confessTimer=null}
+  sendHost({type:'confess_response',confess:c,name:S.myName,...extra});$('confess-info').textContent=c?'已自首':'不自首';
   document.querySelectorAll('#confess-btns .btn').forEach(b=>b.disabled=true)};
+const doConfess=c=>{if(S.confessed)return;if(S.protectedTarget&&S.myName===S.protectedTarget){$('confess-info').textContent='你已被警长保护，本轮不需要自首';return}
+  if(c&&S.cardState?.me?.tryals?.some(t=>!t.revealed)){promptConfessReveal();return}
+  sendConfess(c)};
+const doWilliamConfess=()=>{if(S.confessed)return;sendConfess(true,{william:true})};
+const promptConfessReveal=()=>{const slots=S.cardState.me.tryals.filter(t=>!t.revealed).map(t=>'<button class="btn btn-primary phase-pick" data-target="'+t.slot+'">翻第'+(t.slot+1)+'张</button>').join('');
+  showConfirm('自首翻牌','选择一张自己的审判牌翻开。',null,slots+'<button class="btn btn-outline" onclick="closeConfirm()">取消</button>');
+  bindConfirmTargets(slot=>sendConfess(true,{revealSlot:slot|0}))};
 const resultContinue=()=>{if(S.isHost)bcastDay()};
 const movePlayer=(i,d)=>{if(!S.isHost)return;const n=i+d;if(n<0||n>=H.playerOrder.length)return;
   [H.playerOrder[i],H.playerOrder[n]]=[H.playerOrder[n],H.playerOrder[i]];H.savedPlayerOrder=H.playerOrder.map(id=>H.players.get(id)?.name).filter(Boolean);if(H.gameStarted)bcastDay();else broadcastPL()};
