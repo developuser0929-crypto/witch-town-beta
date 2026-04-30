@@ -263,7 +263,8 @@ input::placeholder{color:var(--text3)}input:focus{border-color:var(--gold)}
 <script src="rules-engine.js"></script>
 <script>
 const APP_VERSION='1.0.1-beta',CHARS='ABCDEFGHJKLMNPQRSTUVWXYZ23456789',CONFESS_TIME=15,RP='salem1692x',REJOIN_GRACE=30000,HEARTBEAT_MS=10000,RECONNECT_MAX=120;
-let peer=null,clientConn=null;
+const RELAY_WS='wss://relay.witch.s2im7pl7e.xyz/ws';
+let peer=null,clientConn=null,relaySocket=null,relayActive=false;
 let S={myName:'',myRole:'villager',isHost:false,roomCode:'',gameState:'home',round:0,dawnDone:false,blackCatHolder:'',selectedTarget:'',protectedTarget:'',cardState:null,gameMode:'character',confessTimer:null,confessed:false,alive:true,seatOrder:[],witchCount:0,reconnAttempts:0,tts:true};
 let H={players:new Map(),connections:new Map(),playerOrder:[],gameStarted:false,constableRevealed:false,witchVotes:new Map(),constableSave:null,confessions:new Set(),confessResponses:new Set(),killTarget:null,dawnVotes:new Map(),conspiracyResponses:new Map(),roleHistory:new Map(),preConspiracyRoles:null,pendingReconnect:new Map(),savedPlayerOrder:[],phaseCtx:null,reconnectGrace:new Map(),cardGame:null};
 let resolveWV=null,resolveCS=null,resolveDV=null;
@@ -388,6 +389,10 @@ const clearSession=()=>{sessionStorage.removeItem('ss');$('rejoin-section').styl
 const broadcast=msg=>{const d=JSON.stringify(msg);H.connections.forEach(c=>{try{c.send(d)}catch(e){}});handleSM(msg)};
 const isClientOpen=()=>clientConn&&clientConn.open;
 const stopClientReconnect=()=>{if(reconnectTimer){clearTimeout(reconnectTimer);reconnectTimer=null}};
+const useRelay=()=>!!RELAY_WS&&!location.search.includes('peer=1');
+const closeRelay=()=>{if(relaySocket){try{relaySocket.close()}catch(e){}relaySocket=null}relayActive=false};
+const relaySend=msg=>{if(!relaySocket||relaySocket.readyState!==WebSocket.OPEN)throw new Error('relay closed');relaySocket.send(JSON.stringify(msg))};
+const relayConn=id=>({peer:id,open:true,send:data=>relaySend({type:'to_client',clientId:id,payload:data}),close:()=>relaySend({type:'close_client',clientId:id})});
 const scheduleClientReconnect=(reason='')=>{
   if(S.isHost||!S.myName||!S.roomCode)return;
   if(clientConnecting)return;
@@ -408,8 +413,21 @@ const sendHost=msg=>{if(S.isHost){handleCM('host',msg);return}
 const sendTo=(pid,msg)=>{if(pid==='host'){handleSM(msg);return}const c=H.connections.get(pid);if(c)try{c.send(JSON.stringify(msg))}catch(e){}};
 const sendWitches=msg=>{H.players.forEach((p,id)=>{if(p.alive&&isW(p.role))sendTo(id,msg)})};
 const setupHost=()=>{peer.on('connection',conn=>{conn.on('open',()=>{H.connections.set(conn.peer,conn);conn.on('data',raw=>handleCM(conn.peer,typeof raw==='string'?JSON.parse(raw):raw))});conn.on('close',()=>{const p=H.players.get(conn.peer);H.connections.delete(conn.peer);if(p){showToast(p.name+' 断线');handleDisconnect(p.name,conn.peer)}})})};
+const openRelayHost=(room,ok,fallback)=>{
+  closeRelay();relayActive=true;let settled=false;
+  const ws=new WebSocket(RELAY_WS+'?role=host&room='+encodeURIComponent(room));relaySocket=ws;
+  const timer=setTimeout(()=>{if(settled)return;settled=true;closeRelay();fallback&&fallback('timeout')},5000);
+  ws.onmessage=e=>{let msg;try{msg=JSON.parse(e.data)}catch(_){return}
+    if(msg.type==='host_ready'){if(settled)return;settled=true;clearTimeout(timer);setStatus('中转已连接');ok();return}
+    if(msg.type==='client_open'){H.connections.set(msg.clientId,relayConn(msg.clientId));return}
+    if(msg.type==='from_client'){if(!H.connections.has(msg.clientId))H.connections.set(msg.clientId,relayConn(msg.clientId));handleCM(msg.clientId,typeof msg.payload==='string'?JSON.parse(msg.payload):msg.payload);return}
+    if(msg.type==='client_close'){const p=H.players.get(msg.clientId);H.connections.delete(msg.clientId);if(p){showToast(p.name+' 断线');handleDisconnect(p.name,msg.clientId)}}};
+  ws.onerror=()=>{if(settled)return;settled=true;clearTimeout(timer);closeRelay();fallback&&fallback('error')};
+  ws.onclose=()=>{if(!settled){settled=true;clearTimeout(timer);fallback&&fallback('close');return}relayActive=false;if(S.isHost&&S.roomCode)setStatus('中转连接断开，请重新创建房间')};
+};
 const restoreHostPeer=()=>{
   if(!S.isHost||!S.roomCode||hostRestoreTimer||hostRestoring)return;
+  if(relayActive)return;
   if(peer&&!peer.destroyed&&!peer.disconnected)return;
   hostRestoreTimer=setTimeout(()=>{hostRestoreTimer=null;
     if(!S.isHost||!S.roomCode)return;
@@ -420,14 +438,7 @@ const restoreHostPeer=()=>{
   },800)
 };
 
-const createRoom=()=>{const name=$('input-name').value.trim();if(!name){showToast('请输入昵称');return}
-  resetHostRuntime();
-  S.myName=name;S.isHost=true;S.tts=true;const saved=loadSession();
-  if(saved?.mode)S.gameMode=saved.mode;
-  S.roomCode=(saved?.isHost&&saved?.hs)?saved.roomCode:genCode();
-  updateModeUI();
-  $('home-status').textContent='创建中...';
-  retryPeer(RP+S.roomCode,0,()=>{
+const finishCreateRoom=(name,saved)=>{
     const hs=saved?.hs;
     if(hs){H.gameStarted=true;S.round=hs.round;S.dawnDone=hs.dd;S.blackCatHolder=hs.bc;H.constableRevealed=hs.cr;S.gameState='day';
       const me=hs.players.find(p=>p.n===name);H.players.set('host',{name,role:me?.r||'villager',alive:me?.a!==false,roleSelected:me?.rs||false});S.myRole=me?.r||'villager';S.alive=me?.a!==false;
@@ -437,7 +448,17 @@ const createRoom=()=>{const name=$('input-name').value.trim();if(!name){showToas
       showDayView(hs.players.map(p=>({name:p.n,alive:p.a})));showToast('房间已恢复');$('id-btn').style.display='flex';
     }else{H.players.set('host',{name,role:'villager',alive:true,roleSelected:false});H.playerOrder=['host'];
       $('lobby-room-code').textContent=S.roomCode;showView('lobby');broadcastPL();$('btn-start').style.display='block'}
-    saveSession()})};
+    saveSession()};
+const createRoom=()=>{const name=$('input-name').value.trim();if(!name){showToast('请输入昵称');return}
+  resetHostRuntime();closeRelay();
+  S.myName=name;S.isHost=true;S.tts=true;const saved=loadSession();
+  if(saved?.mode)S.gameMode=saved.mode;
+  S.roomCode=(saved?.isHost&&saved?.hs)?saved.roomCode:genCode();
+  updateModeUI();
+  $('home-status').textContent='创建中...';
+  const startPeer=()=>retryPeer(RP+S.roomCode,0,()=>finishCreateRoom(name,saved));
+  if(useRelay())openRelayHost(S.roomCode,()=>finishCreateRoom(name,saved),()=>{setStatus('中转不可用，尝试直连...');startPeer()});
+  else startPeer()};
 
 const retryPeer=(id,n,ok)=>{if(n>5){setStatus('创建失败');if(S.isHost)hostRestoring=false;return}if(n>0)setStatus('重连 '+n+'/5');
   peer=new Peer(id);peer.on('open',()=>{setupHost();ok()});
@@ -463,7 +484,25 @@ const resumeNetwork=()=>{
 const joinRoom=(name,code)=>{name=name||$('input-name').value.trim();code=code||$('input-room').value.trim().toUpperCase();
   if(!name){showToast('请输入昵称');return}if(!code||code.length<4){showToast('请输入房间码');return}
   S.myName=name;S.roomCode=code;S.isHost=false;S.tts=false;updateModeUI();setStatus('加入中...');S.reconnAttempts=0;stopClientReconnect();doConn(name,code,false)};
-const doConn=(name,code,isRetry=false)=>{clientConnecting=true;const seq=++connectSeq;if(peer)try{peer.destroy()}catch(e){}peer=new Peer();
+const doRelayConn=(name,code,isRetry=false,fallback)=>{
+  clientConnecting=true;const seq=++connectSeq;if(peer)try{peer.destroy()}catch(e){}closeRelay();
+  const active=()=>seq===connectSeq;
+  let manualClose=false;
+  const closeThisRelay=()=>{manualClose=true;closeRelay()};
+  let connectTimer=setTimeout(()=>{if(!active())return;clientConnecting=false;closeThisRelay();fallback?fallback('relay_timeout'):scheduleClientReconnect('relay_timeout')},6000);
+  const finishConnect=()=>{if(!active())return false;if(connectTimer){clearTimeout(connectTimer);connectTimer=null}clientConnecting=false;return true};
+  const failConnect=reason=>{if(finishConnect()){closeThisRelay();if(fallback)fallback(reason);else scheduleClientReconnect(reason)}};
+  const ws=new WebSocket(RELAY_WS+'?role=client&room='+encodeURIComponent(code));relaySocket=ws;
+  ws.onopen=()=>{if(!finishConnect())return;relayActive=true;clientConn={open:true,send:data=>relaySend({type:'to_host',payload:data}),close:()=>{clientConn.open=false;closeRelay()}};stopClientReconnect();S.reconnAttempts=0;lastClientDataAt=Date.now();setStatus('已连接');clientConn.send(JSON.stringify({type:'join',name}));startHeartbeat();if(S.gameState==='home'){$('lobby-room-code').textContent=code;showView('lobby')}saveSession()};
+  ws.onmessage=e=>{lastClientDataAt=Date.now();let msg;try{msg=JSON.parse(e.data)}catch(_){return}
+    if(msg.type==='room_missing'){setStatus(isRetry?'房主暂时不可达，继续重连...':'暂时找不到房间，正在重试...');failConnect('room_missing');return}
+    if(msg.type==='room_closed'){failConnect('room_closed');return}
+    if(msg.type==='from_host'){const data=typeof msg.payload==='string'?JSON.parse(msg.payload):msg.payload;if(data.type==='pong')return;handleSM(data)}};
+  ws.onerror=()=>failConnect('relay_error');
+  ws.onclose=()=>{if(clientConn)clientConn.open=false;if(!manualClose&&active()&&!clientConnecting)scheduleClientReconnect('relay_close')};
+};
+const doConn=(name,code,isRetry=false)=>{if(useRelay())return doRelayConn(name,code,isRetry,()=>doPeerConn(name,code,isRetry));doPeerConn(name,code,isRetry)};
+const doPeerConn=(name,code,isRetry=false)=>{clientConnecting=true;const seq=++connectSeq;closeRelay();if(peer)try{peer.destroy()}catch(e){}peer=new Peer();
   const active=()=>seq===connectSeq;
   let connectTimer=setTimeout(()=>{if(!active())return;clientConnecting=false;scheduleClientReconnect('connect_timeout')},8000);
   const finishConnect=()=>{if(!active())return false;if(connectTimer){clearTimeout(connectTimer);connectTimer=null}clientConnecting=false;return true};
