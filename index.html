@@ -263,21 +263,6 @@ input::placeholder{color:var(--text3)}input:focus{border-color:var(--gold)}
 <script src="rules-engine.js"></script>
 <script>
 const APP_VERSION='1.0.1-beta',CHARS='ABCDEFGHJKLMNPQRSTUVWXYZ23456789',CONFESS_TIME=15,RP='salem1692x',REJOIN_GRACE=30000,HEARTBEAT_MS=10000,RECONNECT_MAX=120;
-const PEER_OPTIONS={
-  host:'0.peerjs.com',
-  port:443,
-  path:'/',
-  secure:true,
-  config:{
-    iceServers:[
-      {urls:'stun:stun.l.google.com:19302'},
-      {urls:'stun:stun1.l.google.com:19302'},
-      {urls:'stun:stun2.l.google.com:19302'},
-      {urls:'stun:global.stun.twilio.com:3478?transport=udp'}
-    ],
-    sdpSemantics:'unified-plan'
-  }
-};
 let peer=null,clientConn=null;
 let S={myName:'',myRole:'villager',isHost:false,roomCode:'',gameState:'home',round:0,dawnDone:false,blackCatHolder:'',selectedTarget:'',protectedTarget:'',cardState:null,gameMode:'character',confessTimer:null,confessed:false,alive:true,seatOrder:[],witchCount:0,reconnAttempts:0,tts:true};
 let H={players:new Map(),connections:new Map(),playerOrder:[],gameStarted:false,constableRevealed:false,witchVotes:new Map(),constableSave:null,confessions:new Set(),confessResponses:new Set(),killTarget:null,dawnVotes:new Map(),conspiracyResponses:new Map(),roleHistory:new Map(),preConspiracyRoles:null,pendingReconnect:new Map(),savedPlayerOrder:[],phaseCtx:null,reconnectGrace:new Map(),cardGame:null};
@@ -403,8 +388,6 @@ const clearSession=()=>{sessionStorage.removeItem('ss');$('rejoin-section').styl
 const broadcast=msg=>{const d=JSON.stringify(msg);H.connections.forEach(c=>{try{c.send(d)}catch(e){}});handleSM(msg)};
 const isClientOpen=()=>clientConn&&clientConn.open;
 const stopClientReconnect=()=>{if(reconnectTimer){clearTimeout(reconnectTimer);reconnectTimer=null}};
-const closePeer=()=>{if(peer)try{peer.destroy()}catch(e){}peer=null};
-const createPeer=id=>new Peer(id,PEER_OPTIONS);
 const scheduleClientReconnect=(reason='')=>{
   if(S.isHost||!S.myName||!S.roomCode)return;
   if(clientConnecting)return;
@@ -424,19 +407,14 @@ const sendHost=msg=>{if(S.isHost){handleCM('host',msg);return}
 };
 const sendTo=(pid,msg)=>{if(pid==='host'){handleSM(msg);return}const c=H.connections.get(pid);if(c)try{c.send(JSON.stringify(msg))}catch(e){}};
 const sendWitches=msg=>{H.players.forEach((p,id)=>{if(p.alive&&isW(p.role))sendTo(id,msg)})};
-const setupHost=()=>{peer.on('connection',conn=>{
-  H.connections.set(conn.peer,conn);
-  conn.on('data',raw=>handleCM(conn.peer,typeof raw==='string'?JSON.parse(raw):raw));
-  conn.on('open',()=>{});
-  conn.on('close',()=>{const p=H.players.get(conn.peer);H.connections.delete(conn.peer);if(p){showToast(p.name+' 断线');handleDisconnect(p.name,conn.peer)}})
-})};
+const setupHost=()=>{peer.on('connection',conn=>{conn.on('open',()=>{H.connections.set(conn.peer,conn);conn.on('data',raw=>handleCM(conn.peer,typeof raw==='string'?JSON.parse(raw):raw))});conn.on('close',()=>{const p=H.players.get(conn.peer);H.connections.delete(conn.peer);if(p){showToast(p.name+' 断线');handleDisconnect(p.name,conn.peer)}})})};
 const restoreHostPeer=()=>{
   if(!S.isHost||!S.roomCode||hostRestoreTimer||hostRestoring)return;
   if(peer&&!peer.destroyed&&!peer.disconnected)return;
   hostRestoreTimer=setTimeout(()=>{hostRestoreTimer=null;
     if(!S.isHost||!S.roomCode)return;
     hostRestoring=true;
-    closePeer();
+    if(peer)try{peer.destroy()}catch(e){}
     setStatus('房主连接恢复中...');
     retryPeer(RP+S.roomCode,0,()=>{hostRestoring=false;showToast('房主连接已恢复');broadcastPL();saveSession()})
   },800)
@@ -462,7 +440,7 @@ const createRoom=()=>{const name=$('input-name').value.trim();if(!name){showToas
     saveSession()})};
 
 const retryPeer=(id,n,ok)=>{if(n>5){setStatus('创建失败');if(S.isHost)hostRestoring=false;return}if(n>0)setStatus('重连 '+n+'/5');
-  peer=createPeer(id);peer.on('open',()=>{setupHost();ok()});
+  peer=new Peer(id);peer.on('open',()=>{setupHost();ok()});
   peer.on('disconnected',()=>{setStatus('房主连接断开，恢复中...');restoreHostPeer()});
   peer.on('close',()=>{if(S.isHost&&!hostRestoring&&!suppressHostClose)restoreHostPeer()});
   peer.on('error',e=>{if(e.type==='unavailable-id'){suppressHostClose=true;peer.destroy();setTimeout(()=>{suppressHostClose=false;retryPeer(id,n+1,ok)},3000)}else{setStatus('错误: '+e.type);if(S.isHost)restoreHostPeer()}})};
@@ -485,15 +463,13 @@ const resumeNetwork=()=>{
 const joinRoom=(name,code)=>{name=name||$('input-name').value.trim();code=code||$('input-room').value.trim().toUpperCase();
   if(!name){showToast('请输入昵称');return}if(!code||code.length<4){showToast('请输入房间码');return}
   S.myName=name;S.roomCode=code;S.isHost=false;S.tts=false;updateModeUI();setStatus('加入中...');S.reconnAttempts=0;stopClientReconnect();doConn(name,code,false)};
-const doConn=(name,code,isRetry=false)=>{clientConnecting=true;const seq=++connectSeq;closePeer();peer=createPeer();
+const doConn=(name,code,isRetry=false)=>{clientConnecting=true;const seq=++connectSeq;if(peer)try{peer.destroy()}catch(e){}peer=new Peer();
   const active=()=>seq===connectSeq;
   let connectTimer=setTimeout(()=>{if(!active())return;clientConnecting=false;scheduleClientReconnect('connect_timeout')},8000);
   const finishConnect=()=>{if(!active())return false;if(connectTimer){clearTimeout(connectTimer);connectTimer=null}clientConnecting=false;return true};
   const failConnect=reason=>{if(finishConnect())scheduleClientReconnect(reason)};
   peer.on('open',()=>{const c=peer.connect(RP+code,{reliable:true});
-    let joinSent=false;
-    const sendJoin=()=>{if(joinSent||!c.open)return;joinSent=true;try{c.send(JSON.stringify({type:'join',name}))}catch(e){failConnect('join_send')}};
-    c.on('open',()=>{if(!finishConnect())return;clientConn=c;stopClientReconnect();S.reconnAttempts=0;lastClientDataAt=Date.now();setStatus('已连接');setTimeout(sendJoin,120);
+    c.on('open',()=>{if(!finishConnect())return;clientConn=c;stopClientReconnect();S.reconnAttempts=0;lastClientDataAt=Date.now();setStatus('已连接');c.send(JSON.stringify({type:'join',name}));
       c.on('data',raw=>{lastClientDataAt=Date.now();const msg=typeof raw==='string'?JSON.parse(raw):raw;if(msg.type==='pong')return;handleSM(msg)});
       startHeartbeat();
       if(S.gameState==='home'){$('lobby-room-code').textContent=code;showView('lobby')}saveSession()});
