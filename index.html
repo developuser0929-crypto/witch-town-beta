@@ -263,7 +263,7 @@ input::placeholder{color:var(--text3)}input:focus{border-color:var(--gold)}
 <script src="rules-engine.js"></script>
 <script>
 const APP_VERSION='1.0.1-beta',CHARS='ABCDEFGHJKLMNPQRSTUVWXYZ23456789',CONFESS_TIME=15,RP='salem1692x',REJOIN_GRACE=30000,HEARTBEAT_MS=10000,RECONNECT_MAX=120;
-const RELAY_WS='wss://relay.witch.s2im7pl7e.xyz/ws';
+const RELAY_WS='wss://witch-town-relay.developuser0929.workers.dev/ws';
 let peer=null,clientConn=null,relaySocket=null,relayActive=false;
 let S={myName:'',myRole:'villager',isHost:false,roomCode:'',gameState:'home',round:0,dawnDone:false,blackCatHolder:'',selectedTarget:'',protectedTarget:'',cardState:null,gameMode:'character',confessTimer:null,confessed:false,alive:true,seatOrder:[],witchCount:0,reconnAttempts:0,tts:true};
 let H={players:new Map(),connections:new Map(),playerOrder:[],gameStarted:false,constableRevealed:false,witchVotes:new Map(),constableSave:null,confessions:new Set(),confessResponses:new Set(),killTarget:null,dawnVotes:new Map(),conspiracyResponses:new Map(),roleHistory:new Map(),preConspiracyRoles:null,pendingReconnect:new Map(),savedPlayerOrder:[],phaseCtx:null,reconnectGrace:new Map(),cardGame:null};
