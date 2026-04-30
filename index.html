@@ -115,10 +115,11 @@ input::placeholder{color:var(--text3)}input:focus{border-color:var(--gold)}
 	  <div class="view active" id="view-home">
 	    <h1>女巫镇</h1><div class="subtitle">Salem 1692 - 无主持人助手</div><div class="version-tag" id="app-version">v1.0.1-beta</div><div class="divider"></div>
 	    <input id="input-name" placeholder="输入你的昵称" maxlength="8">
-	    <div class="mode-select">
-	      <button class="mode-btn selected" id="mode-character" onclick="selectGameMode('character')">有角色版</button>
-	      <button class="mode-btn" id="mode-classic" onclick="selectGameMode('classic')">无角色版</button>
-	    </div>
+    <div class="mode-select" id="mode-select">
+      <button class="mode-btn selected" id="mode-character" onclick="selectGameMode('character')">有角色版</button>
+      <button class="mode-btn" id="mode-classic" onclick="selectGameMode('classic')">无角色版</button>
+    </div>
+    <div id="mode-hint" style="margin-top:-4px;font-size:12px;color:var(--text3);text-align:left">这个选项只影响房主创建房间。</div>
 	    <button class="btn btn-primary" onclick="createRoom()">创建房间</button>
     <div style="display:flex;gap:8px;width:100%">
       <input id="input-room" placeholder="房间码" maxlength="6" style="flex:1;text-transform:uppercase">
@@ -365,7 +366,7 @@ const getPhaseSyncMessages=data=>{
   return[{type:'night_wait',hint:ph.hint||'当前阶段进行中...'}]
 };
 const syncPlayer=(pid,data)=>{const ps=getFullRoster().map(p=>({name:p.name,alive:p.alive})),msgs=getPhaseSyncMessages(data),actualState=msgs.length?'phase':(S.gameState==='day'?'day':'waiting');
-  sendTo(pid,{type:'rejoin_sync',players:ps,round:S.round,actualState,seatOrder:getSeatOrder(),blackCatHolder:S.blackCatHolder,role:data.role,dawnDone:S.dawnDone,cardState:getCardStateFor(data.name)});
+  sendTo(pid,{type:'rejoin_sync',players:ps,round:S.round,actualState,seatOrder:getSeatOrder(),blackCatHolder:S.blackCatHolder,role:data.role,dawnDone:S.dawnDone,cardState:getCardStateFor(data.name),mode:S.gameMode});
   msgs.forEach(msg=>sendTo(pid,msg))
 };
 const onReconnectTimeout=name=>{
@@ -446,6 +447,7 @@ const createRoom=()=>{const name=$('input-name').value.trim();if(!name){showToas
   S.myName=name;S.isHost=true;S.tts=true;const saved=loadSession();
   if(saved?.mode)S.gameMode=saved.mode;
   S.roomCode=(saved?.isHost&&saved?.hs)?saved.roomCode:genCode();
+  updateModeUI();
   $('home-status').textContent='创建中...';
   retryPeer(RP+S.roomCode,0,()=>{
     const hs=saved?.hs;
@@ -482,7 +484,7 @@ const resumeNetwork=()=>{
 };
 const joinRoom=(name,code)=>{name=name||$('input-name').value.trim();code=code||$('input-room').value.trim().toUpperCase();
   if(!name){showToast('请输入昵称');return}if(!code||code.length<4){showToast('请输入房间码');return}
-  S.myName=name;S.roomCode=code;S.isHost=false;S.tts=false;setStatus('加入中...');S.reconnAttempts=0;stopClientReconnect();doConn(name,code,false)};
+  S.myName=name;S.roomCode=code;S.isHost=false;S.tts=false;updateModeUI();setStatus('加入中...');S.reconnAttempts=0;stopClientReconnect();doConn(name,code,false)};
 const doConn=(name,code,isRetry=false)=>{clientConnecting=true;const seq=++connectSeq;closePeer();peer=createPeer();
   const active=()=>seq===connectSeq;
   let connectTimer=setTimeout(()=>{if(!active())return;clientConnecting=false;scheduleClientReconnect('connect_timeout')},8000);
@@ -682,11 +684,11 @@ const handleSM=msg=>{
   switch(msg.type){
     case'player_list':S.seatOrder=msg.seatOrder||[];if(msg.mode){S.gameMode=msg.mode;selectGameMode(S.gameMode)}if(msg.isLobby)renderLobby(msg.players);break;
     case'join_rejected':stopClientReconnect();showToast(msg.reason);showView('home');break;
-    case'rejoin_sync':S.round=msg.round;S.myRole=msg.role;S.seatOrder=msg.seatOrder||[];S.blackCatHolder=msg.blackCatHolder||'';S.dawnDone=msg.dawnDone;S.cardState=msg.cardState||null;
+    case'rejoin_sync':S.round=msg.round;S.myRole=msg.role;S.seatOrder=msg.seatOrder||[];S.blackCatHolder=msg.blackCatHolder||'';S.dawnDone=msg.dawnDone;S.cardState=msg.cardState||null;if(msg.mode){S.gameMode=msg.mode;selectGameMode(S.gameMode)}
       S.alive=msg.players.find(p=>p.name===S.myName)?.alive!==false;$('id-btn').style.display='flex';
       if(msg.actualState==='day'){S.gameState='day';showDayView(msg.players)}
       else{S.gameState='waiting';showView('spectate');$('spectate-text').textContent=msg.actualState==='phase'?'正在同步当前流程...':'等待中';$('spectate-hint').textContent=msg.actualState==='phase'?'':'本轮结束后同步'}showToast('已重连');break;
-    case'game_start':S.gameState='day';S.round=1;S.protectedTarget='';S.cardState=msg.cardState||null;S.alive=true;S.seatOrder=msg.seatOrder||[];$('id-btn').style.display='flex';showDayView(msg.players);break;
+    case'game_start':S.gameState='day';S.round=1;S.protectedTarget='';S.cardState=msg.cardState||null;S.alive=true;S.seatOrder=msg.seatOrder||[];if(msg.mode){S.gameMode=msg.mode;selectGameMode(S.gameMode)}$('id-btn').style.display='flex';showDayView(msg.players);break;
     case'game_reset':S.gameState='home';S.round=0;S.dawnDone=false;S.blackCatHolder='';S.protectedTarget='';S.cardState=null;S.alive=true;S.myRole='villager';$('id-btn').style.display='none';showView('lobby');break;
     case'phase':handlePhase(msg);break;
     case'night_witch_turn':S.gameState='night_witch';S.witchCount=msg.wc||1;showWitchView(msg.companions,msg.players,false);break;
@@ -720,7 +722,7 @@ const startGame=()=>{if(!S.isHost||H.players.size<2)return;
   H.gameStarted=true;S.round=1;S.gameState='day';S.protectedTarget='';H.phaseCtx=null;H.roleHistory.clear();H.savedPlayerOrder=H.playerOrder.map(id=>H.players.get(id)?.name).filter(Boolean);
   H.players.forEach((p,id)=>{if(p.role!=='villager')addHistory(id,null,p.role,'初始身份')});
   const ps=getOrdered().map(p=>({name:p.name,alive:p.alive}));
-  broadcast({type:'game_start',players:ps,seatOrder:H.playerOrder.map(id=>H.players.get(id)?.name).filter(Boolean)});sendCardDay();saveSession()};
+  broadcast({type:'game_start',players:ps,seatOrder:H.playerOrder.map(id=>H.players.get(id)?.name).filter(Boolean),mode:S.gameMode});sendCardDay();saveSession()};
 const triggerPhase=(p,confirmed=false)=>{if(!S.isHost||S.gameState!=='day')return;
   if((p==='dawn'||p==='night')&&!confirmed){
     if(p==='dawn'&&S.dawnDone)return;
@@ -1002,7 +1004,13 @@ const csSub=()=>{const nr=resolveRole(cD.myRole,cD.gotCard,cD.lostConstable);S.m
   $('conspiracy-content').innerHTML='<div class="conspiracy-step"><div class="step-title">已提交</div><div style="color:var(--text2);margin-top:12px">等待其他玩家...</div></div>'};
 
 // ============ EVENTS ============
-const selectGameMode=mode=>{S.gameMode=mode==='classic'?'classic':'character';$('mode-character')?.classList.toggle('selected',S.gameMode==='character');$('mode-classic')?.classList.toggle('selected',S.gameMode==='classic');saveSession()};
+const updateModeUI=()=>{
+  const room=$('input-room')?.value.trim();
+  const showForHost=!room||S.isHost;
+  if($('mode-select'))$('mode-select').style.display=showForHost?'grid':'none';
+  if($('mode-hint'))$('mode-hint').textContent=showForHost?'这个选项只影响房主创建房间。':'加入房间后将自动跟随房主模式。'
+};
+const selectGameMode=mode=>{S.gameMode=mode==='classic'?'classic':'character';$('mode-character')?.classList.toggle('selected',S.gameMode==='character');$('mode-classic')?.classList.toggle('selected',S.gameMode==='classic');updateModeUI();saveSession()};
 const selectRole=role=>{S.myRole=role;document.querySelectorAll('#role-select .role-btn').forEach(el=>el.classList.remove('selected'));
   document.querySelector('#role-select .role-btn[data-role="'+role+'"]')?.classList.add('selected');sendHost({type:'set_role',role});
   if(S.isHost){const p=H.players.get('host');if(p){p.role=role;p.roleSelected=true}}showToast('身份: '+rn(role));saveSession()};
@@ -1028,7 +1036,8 @@ const movePlayer=(i,d)=>{if(!S.isHost)return;const n=i+d;if(n<0||n>=H.playerOrde
 // ============ INIT ============
 document.addEventListener('DOMContentLoaded',()=>{
   $('input-room')?.addEventListener('input',e=>{e.target.value=e.target.value.toUpperCase()});
-  const s=loadSession();if(s?.mode){S.gameMode=s.mode;selectGameMode(S.gameMode)}
+  $('input-room')?.addEventListener('input',updateModeUI);
+  const s=loadSession();if(s?.isHost&&s?.mode){S.gameMode=s.mode;selectGameMode(S.gameMode)}else updateModeUI();
   if(s?.roomCode){$('input-name').value=s.name||'';$('rejoin-section').style.display='block';
 	    $('rejoin-info').textContent=(s.isHost?'房主 | ':'')+'房间:'+s.roomCode+' 昵称:'+s.name}
 	  $('app-version').textContent='v'+APP_VERSION;
