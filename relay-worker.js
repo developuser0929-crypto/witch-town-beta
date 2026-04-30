@@ -66,7 +66,12 @@ export class Room {
         ws.close(1013, 'room closed');
         return;
       }
-      this.host.send(JSON.stringify({ type: 'from_client', clientId, payload: event.data }));
+      let payload = event.data;
+      try {
+        const msg = JSON.parse(event.data);
+        if (msg.type === 'to_host') payload = msg.payload;
+      } catch (_) {}
+      this.host.send(JSON.stringify({ type: 'from_client', clientId, payload }));
     });
 
     const cleanup = () => {
